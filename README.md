@@ -2,6 +2,9 @@
 
 A Discord bot that records, ranks, and analyzes insults in a server. Built with TypeScript, `discord.js` v14, and Prisma.
 
+### Purpose
+The main goal of this bot is to help people notice how often they insult others and, as a result, reduce the number of insults they say. By tracking counts and surfacing leaderboards/stats, it promotes self-awareness and healthier conversations. In the future, optional punishments or consequences for top offenders may be introduced to further discourage insulting behavior.
+
 ### Features
 - Persistent storage of insults with metadata (guild, insulted user, blamer, timestamps, optional note)
 - Slash commands for adding entries, leaderboards, and per-user stats
