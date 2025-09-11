@@ -79,11 +79,11 @@ function buildEmbed(scope: HistoryScope, page: number, totalCount: number, disti
   ]);
   const config: TableConfig = {
     columns: [
-      { maxWidth: 4, align: 'right' },   // ID
-      { maxWidth: 12, align: 'left' },   // Insult
-      { maxWidth: 8, align: 'left' },    // Note
-      { maxWidth: 10, align: 'left' },   // Blamer
-      { maxWidth: 8, align: 'left' }     // When
+      { maxWidth: 4 },   // ID
+      { maxWidth: 12 },  // Insult
+      { maxWidth: 8 },   // Note
+      { maxWidth: 10 },  // Blamer
+      { maxWidth: 8 }    // When
     ],
     emptyMessage: 'No history data to display'
   };

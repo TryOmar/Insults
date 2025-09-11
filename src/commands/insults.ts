@@ -168,15 +168,21 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
 
   if (effectiveScope.mode === 'all') {
     const { totalRecorded, distinctInsultsTotal, items } = await fetchGeneralPage(guildId, page);
-    const headers = ['Insult', 'Count', 'First', 'Last', 'Top'];
-    const rows = items.map(i => [`"${i.insult}"`, String(i.count), i.first, i.last, i.top]);
+    const headers = ['ID', 'Insult', 'Note', 'Blamer', 'When'];
+    const rows = items.map((i, index) => [
+      String(index + 1),
+      i.insult,
+      '—', // Placeholder for Note
+      i.top, // Top blamer
+      '—'  // Placeholder for When
+    ]);
     const config: TableConfig = {
       columns: [
-        { maxWidth: 18, align: 'left' },   // Insult
-        { maxWidth: 4, align: 'right' },   // Count
-        { maxWidth: 6, align: 'left' },   // First
-        { maxWidth: 6, align: 'left' },   // Last
-        { maxWidth: 6, align: 'left' }    // Top
+        { maxWidth: 4 },   // ID
+        { maxWidth: 20 },  // Insult
+        { maxWidth: 8 },   // Note
+        { maxWidth: 10 },  // Blamer
+        { maxWidth: 8 }    // When
       ],
       emptyMessage: 'No insults recorded yet'
     };
@@ -206,11 +212,11 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
   const headers = ['ID', 'User', 'Blamer', 'Note', 'When'];
   const config: TableConfig = {
     columns: [
-      { maxWidth: 4, align: 'right' },   // ID
-      { maxWidth: 14, align: 'left' },   // User
-      { maxWidth: 10, align: 'left' },   // Blamer
-      { maxWidth: 12, align: 'left' },   // Note
-      { maxWidth: 6, align: 'left' }     // When
+      { maxWidth: 4 },   // ID
+      { maxWidth: 14, },   // User
+      { maxWidth: 10, },   // Blamer
+      { maxWidth: 12, },   // Note
+      { maxWidth: 6, }     // When
     ],
     emptyMessage: 'No occurrences found for this insult'
   };

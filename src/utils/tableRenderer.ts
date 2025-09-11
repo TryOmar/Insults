@@ -1,7 +1,7 @@
 import stringWidth from 'string-width';
 
 export interface TableConfig {
-  columns: Array<{ maxWidth: number; align: 'left' | 'right' }>,
+  columns: Array<{ maxWidth: number }>, // Removed align property
   emptyMessage: string;
 }
 
@@ -28,14 +28,14 @@ export function renderTable(headers: string[], rows: string[][], config?: TableC
 
     if (isArabic) {
       // Force Left-to-Right rendering without adding visible junk
-      return '\u200E' + text;
+      return '\u200E' + text.trim();
     }
 
     return text;
   }
 
   // Pad + truncate text safely (Arabic + wide chars supported)
-  const padText = (text: string, width: number, align: 'left' | 'right' = 'left'): string => {
+  const padText = (text: string, width: number): string => {
     let str = text ?? '';
 
     // Truncate if too wide
@@ -48,7 +48,16 @@ export function renderTable(headers: string[], rows: string[][], config?: TableC
     }
 
     const padSize = width - stringWidth(str);
-    return align === 'right' ? ' '.repeat(padSize) + str : str + ' '.repeat(padSize);
+
+    // Detect if the text is Arabic
+    const isArabic = /^[\u0600-\u06FF\s]+$/.test(str);
+
+    // Apply padding based on text language
+    if (isArabic) {
+      return '\u200E' + str + ' '.repeat(padSize); // Left-to-right padding for Arabic
+    } else {
+      return str + ' '.repeat(padSize);
+    }
   };
 
   // Borders
@@ -58,14 +67,14 @@ export function renderTable(headers: string[], rows: string[][], config?: TableC
 
   // Header row
   const headerRow = '║ ' + headers.map((header, i) =>
-    padText(header, columnWidths[i], config?.columns?.[i]?.align || 'left')
+    padText(header, columnWidths[i])
   ).join(' ║ ') + ' ║';
 
   // Data rows
   const dataRows = rows.map(row =>
     '║ ' + row.map((cell, i) => {
       let content = normalizeCell(cell || '');
-      return padText(content, columnWidths[i], config?.columns?.[i]?.align || 'left');
+      return padText(content, columnWidths[i]);
     }).join(' ║ ') + ' ║'
   );
 
