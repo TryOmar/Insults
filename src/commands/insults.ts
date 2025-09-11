@@ -169,7 +169,13 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
   if (effectiveScope.mode === 'all') {
     const { totalRecorded, distinctInsultsTotal, items } = await fetchGeneralPage(guildId, page);
     const headers = ['Insult', 'Count', 'First', 'Last', 'Top'];
-    const rows = items.map(i => [`"${i.insult}"`, String(i.count), i.first, i.last, i.top]);
+    const rows = items.map(i => [
+      i.insult.replace(/"/g, 'a'), // Remove double quotes around insults
+      String(i.count),
+      i.first.replace('@', ''), // Remove @ from names
+      i.last.replace('@', ''),
+      i.top.replace('@', '')
+    ]);
     const config: TableConfig = {
       columns: [
         { maxWidth: 16 },   // Insult
