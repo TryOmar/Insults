@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('user').setDescription('The insulted user').setRequired(true)
   )
   .addStringOption((opt) =>
-    opt.setName('insult').setDescription('Single word (no spaces, ≤140 chars)').setRequired(true)
+    opt.setName('insult').setDescription('Single word with letters only (no spaces, symbols, or numbers)').setRequired(true)
   )
   .addStringOption((opt) =>
     opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
@@ -47,9 +47,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Enforce single-word insult (no spaces or whitespace)
-  if (!/^\S+$/.test(insult)) {
-    await interaction.reply({ content: 'Insult must be a single word with no spaces.', ephemeral: true });
+  // Enforce single-word insult with only letters (no spaces, symbols, or numbers)
+  if (!/^[a-zA-Z]+$/.test(insult)) {
+    await interaction.reply({ content: 'Insult must be a single word containing only letters (no spaces, symbols, or numbers).', ephemeral: true });
     return;
   }
 
@@ -109,7 +109,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       { name: 'Insult', value: insult, inline: false },
       { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
       { name: 'Total Blames', value: String(totalBlames), inline: true },
-      { name: 'Distinct Insults', value: distinctSummary, inline: false },
+      { name: 'Total Insults', value: distinctSummary, inline: false },
     )
     .setTimestamp(new Date(record.createdAt));
 
@@ -125,7 +125,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         { name: 'Insult', value: insult, inline: false },
         { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
         { name: 'Total Blames', value: String(totalBlames), inline: true },
-        { name: 'Distinct Insults', value: distinctSummary, inline: false },
+        { name: 'Total Insults', value: distinctSummary, inline: false },
       )
       .setTimestamp(new Date(record.createdAt));
     await target.send({ embeds: [dmEmbed] });

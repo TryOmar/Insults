@@ -1,7 +1,8 @@
 import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction } from 'discord.js';
 import * as blame from '../commands/blame.js';
 import * as rank from '../commands/rank.js';
-import * as stats from '../commands/stats.js';
+// import * as stats from '../commands/stats.js';
+import * as history from '../commands/history.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
 import * as unblame from '../commands/unblame.js';
@@ -37,7 +38,8 @@ export async function handleInteraction(interaction: Interaction) {
     const map: Record<string, (i: any) => Promise<void>> = {
       blame: blame.execute,
       rank: rank.execute,
-      stats: stats.execute,
+      // stats: stats.execute, // Deprecated in favor of /history
+      history: history.execute,
       live_rank: liveRank.execute,
       detail: detail.execute,
       unblame: unblame.execute,
@@ -54,12 +56,16 @@ export async function handleInteraction(interaction: Interaction) {
     return;
   }
 
-  // Button -> open modal
+  // Button -> open modal or paginate history
   if (interaction.isButton()) {
     const button = interaction as ButtonInteraction;
     const id = button.customId;
     if (id.startsWith('form_user_')) {
       await form.handleButton(id, button);
+      return;
+    }
+    if (id.startsWith('history:')) {
+      await history.handleButton(id, button);
     }
     return;
   }

@@ -49,8 +49,8 @@ export async function handleButton(customId: string, interaction: any) {
 
     const insult = new TextInputBuilder()
       .setCustomId('insult_text')
-      .setLabel('Insult (single word)')
-      .setPlaceholder('Single word, no spaces (≤140 chars)')
+      .setLabel('Insult (letters only)')
+      .setPlaceholder('Single word with letters only (no spaces, symbols, or numbers)')
       .setRequired(true)
       .setStyle(TextInputStyle.Short);
 
@@ -89,8 +89,8 @@ export async function handleModal(customId: string, interaction: any) {
       await interaction.reply({ content: 'Insult must be ≤ 140 characters.', flags: MessageFlags.Ephemeral });
       return;
     }
-    if (!/^\S+$/.test(insult)) {
-      await interaction.reply({ content: 'Insult must be a single word with no spaces.', flags: MessageFlags.Ephemeral });
+    if (!/^[a-zA-Z]+$/.test(insult)) {
+      await interaction.reply({ content: 'Insult must be a single word containing only letters (no spaces, symbols, or numbers).', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -148,7 +148,7 @@ export async function handleModal(customId: string, interaction: any) {
           { name: 'Insult', value: insult, inline: false },
           { name: 'Note', value: note ?? '—', inline: false },
           { name: 'Total Blames', value: String(totalBlames), inline: true },
-          { name: 'Distinct Insults', value: distinctSummary, inline: false },
+          { name: 'Total Insults', value: distinctSummary, inline: false },
         ],
         timestamp: new Date(record.createdAt).toISOString(),
       } as any;

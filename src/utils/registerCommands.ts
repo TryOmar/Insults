@@ -2,7 +2,8 @@ import { REST, Routes } from 'discord.js';
 import { config } from '../config.js';
 import { data as blame } from '../commands/blame.js';
 import { data as rank } from '../commands/rank.js';
-import { data as stats } from '../commands/stats.js';
+// import { data as stats } from '../commands/stats.js';
+import { data as history } from '../commands/history.js';
 import { data as live_rank } from '../commands/live_rank.js';
 import { data as detail } from '../commands/detail.js';
 import { data as unblame } from '../commands/unblame.js';
@@ -11,7 +12,7 @@ import { data as form } from '../commands/form.js';
 export async function registerAllCommands() {
   const guildId = process.env.DEV_GUILD_ID;
   const rest = new REST({ version: '10' }).setToken(config.token);
-  const commandJson = [blame, rank, stats, live_rank, detail, unblame, form].map((c) => c.toJSON());
+  const commandJson = [blame, rank, history, live_rank, detail, unblame, form].map((c) => c.toJSON());
 
   console.log('— Slash Command Registration —');
   console.log(`Client ID: ${config.clientId}`);
