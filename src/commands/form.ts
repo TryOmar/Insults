@@ -49,8 +49,8 @@ export async function handleButton(customId: string, interaction: any) {
 
     const insult = new TextInputBuilder()
       .setCustomId('insult_text')
-      .setLabel('Insult')
-      .setPlaceholder('Enter the insult')
+      .setLabel('Insult (single word)')
+      .setPlaceholder('Single word, no spaces (≤140 chars)')
       .setRequired(true)
       .setStyle(TextInputStyle.Short);
 
@@ -85,6 +85,14 @@ export async function handleModal(customId: string, interaction: any) {
       await interaction.reply({ content: 'Insult is required.', flags: MessageFlags.Ephemeral });
       return;
     }
+    if (insult.length > 140) {
+      await interaction.reply({ content: 'Insult must be ≤ 140 characters.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (!/^\S+$/.test(insult)) {
+      await interaction.reply({ content: 'Insult must be a single word with no spaces.', flags: MessageFlags.Ephemeral });
+      return;
+    }
 
     // Ensure users exist
     const targetUser = await interaction.client.users.fetch(targetId).catch(() => null);
@@ -93,7 +101,7 @@ export async function handleModal(customId: string, interaction: any) {
     }
     await prisma.user.upsert({ where: { id: interaction.user.id }, update: { username: interaction.user.username }, create: { id: interaction.user.id, username: interaction.user.username } });
 
-    await prisma.insult.create({
+    const record = await prisma.insult.create({
       data: {
         guildId,
         userId: targetId,
@@ -103,7 +111,51 @@ export async function handleModal(customId: string, interaction: any) {
       }
     });
 
-    await interaction.reply({ content: 'Blame recorded via form.', flags: MessageFlags.Ephemeral });
+    // Aggregations for feedback
+    const totalBlames = await prisma.insult.count({ where: { guildId, userId: targetId } });
+    const grouped = await prisma.insult.groupBy({
+      by: ['insult'],
+      where: { guildId, userId: targetId },
+      _count: { insult: true },
+      orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+    });
+    const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
+    let distinctSummary = distinctPairs.join(', ');
+    if (distinctSummary.length === 0) distinctSummary = '—';
+    if (distinctSummary.length > 1000) {
+      const truncated: string[] = [];
+      let used = 0;
+      for (const part of distinctPairs) {
+        const addLen = (truncated.length === 0 ? 0 : 2) + part.length;
+        if (used + addLen > 1000) break;
+        truncated.push(part);
+        used += addLen;
+      }
+      const remaining = distinctPairs.length - truncated.length;
+      distinctSummary = remaining > 0 ? `${truncated.join(', ')} … (+${remaining} more)` : truncated.join(', ');
+    }
+
+    await interaction.reply({ content: `Blame recorded via form. Total blames: ${totalBlames}. Distinct insults (latest up to 10): ${distinctSummary}`, flags: MessageFlags.Ephemeral });
+
+    // Attempt to DM the insulted user with details
+    try {
+      const dmUser = await interaction.client.users.fetch(targetId);
+      const dmEmbed = {
+        title: 'You were blamed',
+        fields: [
+          { name: 'Server', value: interaction.guild?.name ?? 'Unknown', inline: true },
+          { name: 'By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Insult', value: insult, inline: false },
+          { name: 'Note', value: note ?? '—', inline: false },
+          { name: 'Total Blames', value: String(totalBlames), inline: true },
+          { name: 'Distinct Insults', value: distinctSummary, inline: false },
+        ],
+        timestamp: new Date(record.createdAt).toISOString(),
+      } as any;
+      await dmUser.send({ embeds: [dmEmbed] });
+    } catch {
+      // User may have DMs closed; ignore silently
+    }
   } catch (err) {
     console.error('[FORM] saving modal submission failed:', err);
     try { await interaction.reply({ content: 'Could not save your form submission.', flags: MessageFlags.Ephemeral }); } catch {}
