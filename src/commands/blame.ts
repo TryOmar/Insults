@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('user').setDescription('The insulted user').setRequired(true)
   )
   .addStringOption((opt) =>
-    opt.setName('insult').setDescription('Single word with letters only (no spaces, symbols, or numbers)').setRequired(true)
+    opt.setName('insult').setDescription('Single token: letters and numbers allowed. No spaces or symbols.').setRequired(true)
   )
   .addStringOption((opt) =>
     opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
@@ -47,9 +47,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Enforce single-word insult with only letters (no spaces, symbols, or numbers)
-  if (!/^[a-zA-Z]+$/.test(insult)) {
-    await interaction.reply({ content: 'Insult must be a single word containing only letters (no spaces, symbols, or numbers).', ephemeral: true });
+  // Enforce single token with letters and digits only (Unicode letters allowed); no spaces or symbols
+  if (!/^[\p{L}\p{Nd}]+$/u.test(insult)) {
+    await interaction.reply({ content: 'Insult must be a single token with only letters and numbers. No spaces or symbols.', ephemeral: true });
     return;
   }
 

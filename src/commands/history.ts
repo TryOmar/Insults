@@ -1,6 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
-import { renderTable } from '../utils/tableRenderer.js';
+import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
@@ -77,7 +77,17 @@ function buildEmbed(scope: HistoryScope, page: number, totalCount: number, disti
     e.blamerId ? `${blamerMap.get(e.blamerId) ?? 'Unknown'}` : '—',
     getShortTime(new Date(e.createdAt)),
   ]);
-  const table = renderTable(headers, rows);
+  const config: TableConfig = {
+    columns: [
+      { maxWidth: 4, align: 'right' },   // ID
+      { maxWidth: 12, align: 'left' },   // Insult
+      { maxWidth: 8, align: 'left' },    // Note
+      { maxWidth: 10, align: 'left' },   // Blamer
+      { maxWidth: 8, align: 'left' }     // When
+    ],
+    emptyMessage: 'No history data to display'
+  };
+  const table = renderTable(headers, rows, config);
 
   const title = scope.userId
     ? `📜 History for ${targetUsername ? `${targetUsername}` : scope.userId}`
@@ -110,17 +120,14 @@ function buildEmbed(scope: HistoryScope, page: number, totalCount: number, disti
 
 function buildComponents(scope: HistoryScope, page: number, totalCount: number) {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const prev = new ButtonBuilder()
-    .setCustomId(buildCustomId(scope, Math.max(1, page - 1)))
-    .setEmoji('◀️')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(page <= 1);
-  const next = new ButtonBuilder()
-    .setCustomId(buildCustomId(scope, Math.min(totalPages, page + 1)))
-    .setEmoji('▶️')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(page >= totalPages);
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(prev, next);
+  if (totalPages <= 1) return [] as any;
+  const prevId = buildCustomId(scope, Math.max(1, page - 1));
+  const nextId = buildCustomId(scope, Math.min(totalPages, page + 1));
+  const prev = new ButtonBuilder().setCustomId(prevId).setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1);
+  const next = new ButtonBuilder().setCustomId(nextId).setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages);
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  row.addComponents(prev);
+  if (nextId !== prevId) row.addComponents(next);
   return [row];
 }
 

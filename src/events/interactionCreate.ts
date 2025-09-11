@@ -5,6 +5,7 @@ import * as rank from '../commands/rank.js';
 import * as history from '../commands/history.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
+import * as insults from '../commands/insults.js';
 import * as unblame from '../commands/unblame.js';
 import * as form from '../commands/form.js';
 
@@ -44,6 +45,7 @@ export async function handleInteraction(interaction: Interaction) {
       detail: detail.execute,
       unblame: unblame.execute,
       form: form.execute,
+      insults: insults.execute,
     };
 
     const handler = map[interaction.commandName];
@@ -66,6 +68,9 @@ export async function handleInteraction(interaction: Interaction) {
     }
     if (id.startsWith('history:')) {
       await history.handleButton(id, button);
+    }
+    if (id.startsWith('insults:')) {
+      await insults.handleButton(id, button);
     }
     return;
   }

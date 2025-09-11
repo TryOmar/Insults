@@ -49,8 +49,8 @@ export async function handleButton(customId: string, interaction: any) {
 
     const insult = new TextInputBuilder()
       .setCustomId('insult_text')
-      .setLabel('Insult (letters only)')
-      .setPlaceholder('Single word with letters only (no spaces, symbols, or numbers)')
+      .setLabel('Insult (letters/digits)')
+      .setPlaceholder('Single token with letters and numbers allowed. No spaces or symbols.')
       .setRequired(true)
       .setStyle(TextInputStyle.Short);
 
@@ -89,8 +89,9 @@ export async function handleModal(customId: string, interaction: any) {
       await interaction.reply({ content: 'Insult must be ≤ 140 characters.', flags: MessageFlags.Ephemeral });
       return;
     }
-    if (!/^[a-zA-Z]+$/.test(insult)) {
-      await interaction.reply({ content: 'Insult must be a single word containing only letters (no spaces, symbols, or numbers).', flags: MessageFlags.Ephemeral });
+    // Allow Unicode letters and digits; disallow spaces/symbols
+    if (!/^[\p{L}\p{Nd}]+$/u.test(insult)) {
+      await interaction.reply({ content: 'Insult must be a single token with only letters and numbers. No spaces or symbols.', flags: MessageFlags.Ephemeral });
       return;
     }
 
