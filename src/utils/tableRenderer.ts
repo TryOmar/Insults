@@ -1,44 +1,38 @@
 import stringWidth from 'string-width';
 
-export function renderTable(headers: string[], rows: string[][]): string {
+export interface TableConfig {
+  columns: Array<{ maxWidth: number; align: 'left' | 'right' }>,
+  emptyMessage: string;
+}
+
+export function renderTable(headers: string[], rows: string[][], config?: TableConfig): string {
   if (rows.length === 0) {
-    return '```text\nNo data to display\n```';
+    return '```text\n' + (config?.emptyMessage || 'No data to display') + '\n```';
   }
 
-  // Define maximum column widths to fit Discord's character limit
-  const maxColumnWidths = {
-    0: 4,  // ID column
-    1: 12, // Insult column
-    2: 8,  // Note column
-    3: 10, // Blamer column
-    4: 8   // When column
-  };
-
-  // Calculate actual column widths (min of content width and max width)
+  // Use maxWidth from config if provided, otherwise fallback to defaults
   const columnWidths: number[] = headers.map((header, colIndex) => {
     const headerWidth = stringWidth(header);
     const maxRowWidth = Math.max(...rows.map(row => stringWidth(row[colIndex] || '')));
     const contentWidth = Math.max(headerWidth, maxRowWidth);
-    const maxAllowed = maxColumnWidths[colIndex as keyof typeof maxColumnWidths] || 8;
+    const maxAllowed = config?.columns?.[colIndex]?.maxWidth || 8; // Default max width
     return Math.min(contentWidth, maxAllowed);
   });
 
   // Normalize Arabic-only fields
- // Normalize Arabic cells by forcing LTR direction
-function normalizeCell(text: string): string {
+  function normalizeCell(text: string): string {
     if (!text) return '';
-  
+
     // Detect pure Arabic text (basic Arabic unicode range)
     const isArabic = /^[\u0600-\u06FF\s]+$/.test(text);
-  
+
     if (isArabic) {
       // Force Left-to-Right rendering without adding visible junk
       return '\u200E' + text;
     }
-  
+
     return text;
   }
-  
 
   // Pad + truncate text safely (Arabic + wide chars supported)
   const padText = (text: string, width: number, align: 'left' | 'right' = 'left'): string => {
@@ -64,21 +58,14 @@ function normalizeCell(text: string): string {
 
   // Header row
   const headerRow = '║ ' + headers.map((header, i) =>
-    padText(header, columnWidths[i])
+    padText(header, columnWidths[i], config?.columns?.[i]?.align || 'left')
   ).join(' ║ ') + ' ║';
 
   // Data rows
   const dataRows = rows.map(row =>
     '║ ' + row.map((cell, i) => {
-      let content = normalizeCell(cell || '', i);
-
-      // Special handling
-      if (i === 3 && content.startsWith('@') && stringWidth(content) > columnWidths[i]) {
-        // Keep '@' visible
-        content = '@' + content.slice(1, content.length - 1) + '…';
-      }
-
-      return padText(content, columnWidths[i], i === 0 ? 'right' : 'left');
+      let content = normalizeCell(cell || '');
+      return padText(content, columnWidths[i], config?.columns?.[i]?.align || 'left');
     }).join(' ║ ') + ' ║'
   );
 

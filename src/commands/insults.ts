@@ -172,11 +172,11 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
     const rows = items.map(i => [`"${i.insult}"`, String(i.count), i.first, i.last, i.top]);
     const config: TableConfig = {
       columns: [
-        { maxWidth: 32, align: 'left' },   // Insult
+        { maxWidth: 18, align: 'left' },   // Insult
         { maxWidth: 4, align: 'right' },   // Count
-        { maxWidth: 10, align: 'left' },   // First
-        { maxWidth: 10, align: 'left' },   // Last
-        { maxWidth: 10, align: 'left' }    // Top
+        { maxWidth: 6, align: 'left' },   // First
+        { maxWidth: 6, align: 'left' },   // Last
+        { maxWidth: 6, align: 'left' }    // Top
       ],
       emptyMessage: 'No insults recorded yet'
     };
