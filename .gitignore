@@ -1,0 +1,67 @@
+# Node dependencies
+node_modules/
+
+# TypeScript build outputs
+/dist/
+/build/
+/lib/
+/out/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Testing / coverage
+coverage/
+.nyc_output/
+
+# Caches and temporary files
+.cache/
+.tmp/
+.temp/
+/.turbo/
+/.parcel-cache/
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS / misc
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Prisma local databases
+prisma/*.db
+prisma/*.db-journal
+
+# Type checking / tooling
+/.eslintcache
+.stylelintcache
+
+# Local data
+*.local
+
+# Certificates / keys
+*.pem
+*.key
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Misc build artifacts
+*.tgz
