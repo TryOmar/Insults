@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('user').setDescription('The insulted user').setRequired(true)
   )
   .addStringOption((opt) =>
-    opt.setName('insult').setDescription('Word or short phrase (≤140 chars)').setRequired(true)
+    opt.setName('insult').setDescription('Single token: letters and numbers allowed. No spaces or symbols.').setRequired(true)
   )
   .addStringOption((opt) =>
     opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
@@ -47,6 +47,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Enforce single token with letters and digits only (Unicode letters allowed); no spaces or symbols
+  if (!/^[\p{L}\p{Nd}]+$/u.test(insult)) {
+    await interaction.reply({ content: 'Insult must be a single token with only letters and numbers. No spaces or symbols.', ephemeral: true });
+    return;
+  }
+
   // Upsert users to ensure relations exist
   await prisma.user.upsert({
     where: { id: target.id },
@@ -70,6 +76,31 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     },
   });
 
+  // Aggregations for feedback
+  const totalBlames = await prisma.insult.count({ where: { guildId, userId: target.id } });
+  const grouped = await prisma.insult.groupBy({
+    by: ['insult'],
+    where: { guildId, userId: target.id },
+    _count: { insult: true },
+    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+  });
+  const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
+  let distinctSummary = distinctPairs.join(', ');
+  if (distinctSummary.length === 0) distinctSummary = '—';
+  if (distinctSummary.length > 1000) {
+    // Truncate safely to fit embed field limits
+    const truncated: string[] = [];
+    let used = 0;
+    for (const part of distinctPairs) {
+      const addLen = (truncated.length === 0 ? 0 : 2) + part.length; // include comma+space
+      if (used + addLen > 1000) break;
+      truncated.push(part);
+      used += addLen;
+    }
+    const remaining = distinctPairs.length - truncated.length;
+    distinctSummary = remaining > 0 ? `${truncated.join(', ')} … (+${remaining} more)` : truncated.join(', ');
+  }
+
   const embed = new EmbedBuilder()
     .setTitle('Blame recorded')
     .addFields(
@@ -77,8 +108,28 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       { name: 'Blamed By', value: userMention(interaction.user.id), inline: true },
       { name: 'Insult', value: insult, inline: false },
       { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
+      { name: 'Total Blames', value: String(totalBlames), inline: true },
+      { name: 'Total Insults', value: distinctSummary, inline: false },
     )
     .setTimestamp(new Date(record.createdAt));
 
   await interaction.reply({ embeds: [embed] });
+
+  // Attempt to DM the insulted user with details
+  try {
+    const dmEmbed = new EmbedBuilder()
+      .setTitle('You were blamed')
+      .addFields(
+        { name: 'Server', value: interaction.guild?.name ?? 'Unknown', inline: true },
+        { name: 'By', value: userMention(interaction.user.id), inline: true },
+        { name: 'Insult', value: insult, inline: false },
+        { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
+        { name: 'Total Blames', value: String(totalBlames), inline: true },
+        { name: 'Total Insults', value: distinctSummary, inline: false },
+      )
+      .setTimestamp(new Date(record.createdAt));
+    await target.send({ embeds: [dmEmbed] });
+  } catch {
+    // User may have DMs closed; ignore silently
+  }
 }
