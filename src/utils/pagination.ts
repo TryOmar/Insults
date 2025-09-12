@@ -5,6 +5,7 @@ export interface PaginationConfig {
   pageSize: number;
   commandName: string;
   customIdPrefix: string;
+  ephemeral?: boolean; // Whether responses should be ephemeral (default: true)
 }
 
 export interface PaginationData<T> {
@@ -79,10 +80,16 @@ export class PaginationManager<T, D = PaginationData<T>> {
   async handleInitialCommand(interaction: ChatInputCommandInteraction, ...args: any[]): Promise<void> {
     const guildId = interaction.guildId;
     if (!guildId) {
-      await interaction.reply({ 
-        content: 'This command can only be used in a server.', 
-        flags: MessageFlags.Ephemeral 
-      });
+      const replyOptions: any = { 
+        content: 'This command can only be used in a server.'
+      };
+      
+      // Only add ephemeral flag if configured to be ephemeral (default: true)
+      if (this.config.ephemeral !== false) {
+        replyOptions.flags = MessageFlags.Ephemeral;
+      }
+      
+      await interaction.reply(replyOptions);
       return;
     }
 
@@ -113,11 +120,17 @@ export class PaginationManager<T, D = PaginationData<T>> {
             components
           });
         } else {
-          await interaction.reply({ 
+          const replyOptions: any = { 
             embeds: [embed], 
-            components, 
-            flags: MessageFlags.Ephemeral 
-          });
+            components
+          };
+          
+          // Only add ephemeral flag if configured to be ephemeral (default: true)
+          if (this.config.ephemeral !== false) {
+            replyOptions.flags = MessageFlags.Ephemeral;
+          }
+          
+          await interaction.reply(replyOptions);
         }
       } else {
         if ('update' in interaction) {
@@ -154,10 +167,16 @@ export class PaginationManager<T, D = PaginationData<T>> {
 
       if (isInitial) {
         try {
-          await interaction.reply({ 
-            embeds: [errorEmbed], 
-            flags: MessageFlags.Ephemeral 
-          });
+          const errorReplyOptions: any = { 
+            embeds: [errorEmbed]
+          };
+          
+          // Only add ephemeral flag if configured to be ephemeral (default: true)
+          if (this.config.ephemeral !== false) {
+            errorReplyOptions.flags = MessageFlags.Ephemeral;
+          }
+          
+          await interaction.reply(errorReplyOptions);
         } catch (replyError) {
           console.log('Failed to reply with error:', replyError);
         }

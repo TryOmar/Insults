@@ -105,7 +105,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
     columns: [
       { maxWidth: 4 },   // ID
       { maxWidth: 8},  // Blamer/Insulter
-      { maxWidth: 12 },  // Insult
+      { maxWidth: 14 },  // Insult
     ],
     emptyMessage: 'No history data to display'
   };
@@ -151,7 +151,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
     {
       pageSize: PAGE_SIZE,
       commandName: 'history',
-      customIdPrefix: 'history'
+      customIdPrefix: 'history',
+      ephemeral: false // Make history visible to everyone
     },
     {
       fetchData: async (page: number, pageSize: number, scope: HistoryScope) => {
