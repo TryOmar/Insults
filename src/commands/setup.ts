@@ -1,9 +1,36 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder, TextChannel, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
-import { buildLeaderboardEmbed } from '../utils/leaderboard.js';
 import * as form from './form.js';
 import * as insults from './insults.js';
 import * as history from './history.js';
+
+const PAGE_SIZE = 10;
+
+async function fetchLeaderboardData(guildId: string, page: number): Promise<{ userId: string; points: number; username: string }[]> {
+  const rows = await prisma.insult.groupBy({
+    by: ['userId'],
+    where: { guildId },
+    _count: { userId: true },
+    orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
+    skip: (page - 1) * PAGE_SIZE,
+    take: PAGE_SIZE,
+  });
+
+  // Fetch usernames for all users
+  const userIds = rows.map(row => row.userId);
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, username: true }
+  });
+
+  const userMap = new Map(users.map(u => [u.id, u.username]));
+
+  return rows.map(row => ({
+    userId: row.userId,
+    points: row._count.userId,
+    username: userMap.get(row.userId) || 'Unknown User'
+  }));
+}
 
 export const data = new SlashCommandBuilder()
   .setName('setup')
@@ -92,15 +119,40 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       )
       .setTimestamp();
 
-    // Get current rank leaderboard data
-    let leaderboardEmbed = await buildLeaderboardEmbed(guildId);
+    // Get current rank leaderboard data (using same logic as /rank command)
+    const leaderboardData = await fetchLeaderboardData(guildId, 1);
+    let leaderboardEmbed: EmbedBuilder;
     
-    // If no insults recorded yet, create a placeholder embed
-    if (!leaderboardEmbed) {
+    if (leaderboardData.length === 0) {
+      // No insults recorded yet - match /rank's empty state
       leaderboardEmbed = new EmbedBuilder()
-        .setTitle('Insult Leaderboard')
-        .setDescription('No insults recorded yet. Use the **Blame** button below to get started!')
-        .setColor(0xFF6B6B)
+        .setTitle('💀 Insults Leaderboard')
+        .setDescription('No insults recorded yet.')
+        .setColor(0xDC143C)
+        .setFooter({ text: 'Click the buttons below to interact with the bot' })
+        .setTimestamp();
+    } else {
+      // Format exactly like /rank command
+      const rankList = leaderboardData.map((item, index) => {
+        const rank = index + 1;
+        let rankText = '';
+        if (rank === 1) {
+          rankText = '**1st Place:** 💀';
+        } else if (rank === 2) {
+          rankText = '**2nd Place:** 👎';
+        } else if (rank === 3) {
+          rankText = '**3rd Place:** 😢';
+        } else {
+          rankText = `**${rank}.**`;
+        }
+        const pointsText = item.points === 1 ? 'Point' : 'Points';
+        return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
+      }).join('\n');
+
+      leaderboardEmbed = new EmbedBuilder()
+        .setTitle('💀 Insults Leaderboard')
+        .setDescription(rankList)
+        .setColor(0xDC143C)
         .setFooter({ text: 'Click the buttons below to interact with the bot' })
         .setTimestamp();
     }
@@ -190,15 +242,40 @@ export async function updateLeaderboard(guildId: string, client: any) {
     // const message = await channel.messages.fetch(setup.leaderboardMessageId);
     // if (!message) return;
 
-    // Get current rank leaderboard data
-    // let leaderboardEmbed = await buildLeaderboardEmbed(guildId);
+    // Get current rank leaderboard data (using same logic as /rank command)
+    // const leaderboardData = await fetchLeaderboardData(guildId, 1);
+    // let leaderboardEmbed: EmbedBuilder;
     
-    // // If no insults recorded yet, create a placeholder embed
-    // if (!leaderboardEmbed) {
+    // if (leaderboardData.length === 0) {
+    //   // No insults recorded yet - match /rank's empty state
     //   leaderboardEmbed = new EmbedBuilder()
-    //     .setTitle('Insult Leaderboard')
-    //     .setDescription('No insults recorded yet. Use the **Blame** button below to get started!')
-    //     .setColor(0xFF6B6B)
+    //     .setTitle('💀 Insults Leaderboard')
+    //     .setDescription('No insults recorded yet.')
+    //     .setColor(0xDC143C)
+    //     .setFooter({ text: 'Click the buttons below to interact with the bot' })
+    //     .setTimestamp();
+    // } else {
+    //   // Format exactly like /rank command
+    //   const rankList = leaderboardData.map((item, index) => {
+    //     const rank = index + 1;
+    //     let rankText = '';
+    //     if (rank === 1) {
+    //       rankText = '**1st Place:** 💀';
+    //     } else if (rank === 2) {
+    //       rankText = '**2nd Place:** 👎';
+    //     } else if (rank === 3) {
+    //       rankText = '**3rd Place:** 😢';
+    //     } else {
+    //       rankText = `**${rank}.**`;
+    //     }
+    //     const pointsText = item.points === 1 ? 'Point' : 'Points';
+    //     return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
+    //   }).join('\n');
+
+    //   leaderboardEmbed = new EmbedBuilder()
+    //     .setTitle('💀 Insults Leaderboard')
+    //     .setDescription(rankList)
+    //     .setColor(0xDC143C)
     //     .setFooter({ text: 'Click the buttons below to interact with the bot' })
     //     .setTimestamp();
     // }
