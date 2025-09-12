@@ -5,6 +5,7 @@ import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
 import * as unblame from '../commands/unblame.js';
 import * as archive from '../commands/archive.js';
+import * as revert from '../commands/revert.js';
 import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
@@ -45,6 +46,7 @@ export async function handleInteraction(interaction: Interaction) {
       detail: detail.execute,
       unblame: unblame.execute,
       archive: archive.execute,
+      revert: revert.execute,
       help: help.execute,
       history: history.execute,
       insults: insults.execute,
@@ -70,6 +72,8 @@ export async function handleInteraction(interaction: Interaction) {
       await setup.handleButton(id, button);
     } else if (id.startsWith('unblame:')) {
       await unblame.handleButton(id, button);
+    } else if (id.startsWith('revert:')) {
+      await revert.handleButton(id, button);
     }
     return;
   }
