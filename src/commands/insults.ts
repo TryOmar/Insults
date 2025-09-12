@@ -61,67 +61,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     (interaction as any)._normalizedWord = normalized;
   }
 
-  // If no word provided, show a leaderboard-style preview
-  if (!wordRaw) {
-    await showInsultsPreview(interaction, guildId);
-    return;
-  }
-
-  const scope: ViewScope = { mode: 'word', guildId, word: ((interaction as any)._normalizedWord ?? wordRaw) as string };
+  const scope: ViewScope = wordRaw 
+    ? { mode: 'word', guildId, word: ((interaction as any)._normalizedWord ?? wordRaw) as string }
+    : { mode: 'all', guildId };
   
   const paginationManager = createInsultsPaginationManager();
   await paginationManager.handleInitialCommand(interaction, scope);
 }
 
-async function showInsultsPreview(interaction: ChatInputCommandInteraction, guildId: string) {
-  // Get top insults by count with top blamer info
-  const topInsults = await prisma.insult.groupBy({
-    by: ['insult'],
-    where: { guildId },
-    _count: { insult: true },
-    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-    take: 10,
-  });
-
-  if (topInsults.length === 0) {
-    const success = await safeInteractionReply(interaction, { 
-      content: 'No insults recorded yet.', 
-      flags: MessageFlags.Ephemeral 
-    });
-    if (!success) return;
-    return;
-  }
-
-  const LRM = '\u200E'; // Left-to-Right Mark
-  const insultList = topInsults.map((item, index) => {
-    const rank = index + 1;
-    let rankText = '';
-    if (rank === 1) {
-      rankText = '**1st:** 🔥';
-    } else if (rank === 2) {
-      rankText = '**2nd:** ⚡';
-    } else if (rank === 3) {
-      rankText = '**3rd:** 💥';
-    } else {
-      rankText = `**${rank}.**`;
-    }
-    
-    const line = `${rankText} ${item.insult} - ${item._count.insult}`;
-    return LRM + line; // Add LRM at the start of each line
-  }).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setTitle('🔥 Top Insults')
-    .setDescription(insultList)
-    .setColor(0xFF6B6B) // Light red color
-    .setFooter({ text: 'Use /insults <word> for details' })
-    .setTimestamp();
-
-  const success = await safeInteractionReply(interaction, { 
-    embeds: [embed] 
-  });
-  if (!success) return;
-}
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
   const [totalRecorded, groupedAll] = await Promise.all([
@@ -253,11 +200,28 @@ function buildInsultsEmbed(data: PaginationData<any> & {
       .setColor(0xDC143C) // Dark red color
       .setTimestamp();
   } else {
-    // General view - this would need to be implemented if needed
+    // General view - show insults in table format
+    const headers = ['Insult', 'Frequency'];
+    const rows = items.map((item: any) => [
+      item.insult,
+      String(item.count)
+    ]);
+
+    const config: TableConfig = {
+      columns: [
+        { maxWidth: 25 },  // Insult
+        { maxWidth: 8 }    // Frequency
+      ],
+      emptyMessage: 'No insults recorded yet'
+    };
+
+    const table = renderTable(headers, rows, config);
     return new EmbedBuilder()
       .setTitle('💀 Insults Overview')
-      .setDescription('General insults view not implemented yet')
-      .setColor(0xDC143C);
+      .setDescription(table)
+      .setFooter({ text: `Page ${currentPage}/${totalPages}` })
+      .setColor(0xDC143C)
+      .setTimestamp();
   }
 }
 
