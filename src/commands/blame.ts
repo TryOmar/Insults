@@ -40,7 +40,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const sent = await interaction.reply({ embeds: [result.data.publicEmbed], fetchReply: true });
+  await interaction.reply({ embeds: [result.data.publicEmbed] });
+  const sent = await interaction.fetchReply();
   try {
     // Add thumbs up/down reactions to the public message
     if ('react' in sent && typeof sent.react === 'function') {

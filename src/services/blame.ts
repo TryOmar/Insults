@@ -234,3 +234,75 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 }
 
 
+export interface BlameRecordShape {
+  id: number;
+  guildId: string;
+  userId: string;
+  blamerId: string;
+  insult: string;
+  note: string | null;
+  createdAt: Date;
+}
+
+export async function buildBlameEmbedFromRecord(type: BlameEmbedType, record: BlameRecordShape, guildName?: string | null): Promise<EmbedBuilder> {
+  const { guildId, userId, blamerId, insult, note, createdAt, id } = record;
+
+  const [targetUser, blamerUser] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } }),
+    prisma.user.findUnique({ where: { id: blamerId }, select: { id: true, username: true } }),
+  ]);
+
+  const totalBlames = await prisma.insult.count({ where: { guildId, userId } });
+  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
+
+  const grouped = await prisma.insult.groupBy({
+    by: ['insult'],
+    where: { guildId, userId },
+    _count: { insult: true },
+    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+  });
+  const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
+  let distinctSummary = '—';
+  if (distinctPairs.length > 0) {
+    let buffer = '';
+    let used = 0;
+    let itemsOnLine = 0;
+    let added = 0;
+    for (let i = 0; i < distinctPairs.length; i++) {
+      const part = distinctPairs[i];
+      const sep = itemsOnLine === 0 ? '' : ', ';
+      const prospective = sep + part;
+      const prospectiveLen = prospective.length;
+      if (used + prospectiveLen > 1000) break;
+      buffer += prospective;
+      used += prospectiveLen;
+      itemsOnLine++;
+      added++;
+      if (itemsOnLine === 5 && i !== distinctPairs.length - 1) {
+        if (used + 1 > 1000) break;
+        buffer += '\n';
+        used += 1;
+        itemsOnLine = 0;
+      }
+    }
+    const remaining = distinctPairs.length - added;
+    distinctSummary = remaining > 0 ? `${buffer} … (+${remaining} more)` : buffer;
+  }
+
+  return buildBlameEmbed(type, {
+    createdAt,
+    guildName: guildName ?? null,
+    targetId: targetUser?.id ?? userId,
+    targetUsername: targetUser?.username,
+    blamerUsername: blamerUser?.username,
+    blamerId: blamerUser?.id ?? blamerId,
+    insult,
+    insultCount,
+    note,
+    totalBlames,
+    distinctSummary,
+    recordId: String(id),
+  });
+}
+
+
