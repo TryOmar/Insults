@@ -24,13 +24,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     update: ({ radarEnabled: enabled } as any),
     create: ({
       guildId: interaction.guildId,
-      channelId: interaction.channelId,
-      leaderboardMessageId: '0',
       radarEnabled: enabled,
     } as any),
   });
 
   await interaction.reply({ content: `Radar is now ${enabled ? 'enabled' : 'disabled'} for this server.`, flags: MessageFlags.Ephemeral });
 }
-
-

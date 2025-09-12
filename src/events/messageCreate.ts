@@ -37,8 +37,6 @@ export async function handleMessage(message: Message) {
         setup = await prisma.setup.create({
           data: ({
             guildId,
-            channelId: message.channelId,
-            leaderboardMessageId: '0',
             radarEnabled: true,
           } as any),
         });

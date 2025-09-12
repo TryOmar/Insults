@@ -163,16 +163,16 @@ export async function showViewingCommands(interaction: ButtonInteraction) {
 export async function showManagementCommands(interaction: ButtonInteraction) {
   const embed = new EmbedBuilder()
     .setTitle('⚙️ Management Commands')
-    .setDescription('Commands for managing live leaderboards and server features')
+    .setDescription('Commands for managing server features')
     .setColor(0x00D26A)
     .addFields(
       {
-        name: '`/live_rank`',
-        value: 'Manage live-updating leaderboard\n\n• Create auto-updating rank messages\n• Perfect for dedicated leaderboard channels\n• Updates automatically when new insults are added',
+        name: '`/radar <enabled>`',
+        value: 'Toggle automatic insult detection\n\n• **enabled**: true/false to enable or disable radar\n• Automatically scans messages for known insults\n• Requires Manage Server permission\n• Creates automatic blame records when insults are detected',
         inline: false
       }
     )
-    .setFooter({ text: 'Live leaderboards update automatically when new insults are recorded' })
+    .setFooter({ text: 'Radar automatically detects insults in messages and creates blame records' })
     .setTimestamp();
 
   const row = new ActionRowBuilder<ButtonBuilder>()

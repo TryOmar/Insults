@@ -33,13 +33,9 @@ model Insult {
 }
 
 model Setup {
-  guildId              String   @id
-  channelId            String
-  leaderboardMessageId String
-  radarEnabled         Boolean  @default(false)
-  createdAt            DateTime @default(now())
-
-  @@index([channelId])
+  guildId      String   @id
+  radarEnabled Boolean  @default(false)
+  createdAt    DateTime @default(now())
 }
 
 model Archive {
