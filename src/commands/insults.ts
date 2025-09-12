@@ -156,9 +156,9 @@ async function fetchGeneralPage(guildId: string, page: number, pageSize: number)
   const items = details.map(d => ({
     insult: d.insult,
     count: d.count,
-    first: d.firstBlamerId ? `@${username.get(d.firstBlamerId) ?? d.firstBlamerId}` : '—',
-    last: d.lastBlamerId ? `@${username.get(d.lastBlamerId) ?? d.lastBlamerId}` : '—',
-    top: d.topBlamerId ? `@${username.get(d.topBlamerId) ?? d.topBlamerId}` : '—',
+    first: d.firstBlamerId ? `${username.get(d.firstBlamerId) ?? d.firstBlamerId}` : '—',
+    last: d.lastBlamerId ? `${username.get(d.lastBlamerId) ?? d.lastBlamerId}` : '—',
+    top: d.topBlamerId ? `${username.get(d.topBlamerId) ?? d.topBlamerId}` : '—',
   }));
 
   const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
@@ -183,15 +183,15 @@ async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number
 
 async function fetchWordPage(guildId: string, word: string, page: number, pageSize: number): Promise<PaginationData<any>> {
   const where = { guildId, insult: word } as const;
-  const [totalCount, distinctUsersCount, topBlamerGroup, entries] = await Promise.all([
+  const [totalCount, distinctUsersCount, topInsulterGroup, entries] = await Promise.all([
     prisma.insult.count({ where }),
     prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
-    prisma.insult.groupBy({ by: ['blamerId'], where, _count: { blamerId: true }, orderBy: [{ _count: { blamerId: 'desc' } }, { blamerId: 'asc' }], take: 1 }),
+    prisma.insult.groupBy({ by: ['userId'], where, _count: { userId: true }, orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }], take: 1 }),
     prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
   ]);
 
   const userIds = new Set<string>();
-  if (topBlamerGroup[0]?.blamerId) userIds.add(topBlamerGroup[0].blamerId);
+  if (topInsulterGroup[0]?.userId) userIds.add(topInsulterGroup[0].userId);
   entries.forEach(e => { if (e.userId) userIds.add(e.userId); if (e.blamerId) userIds.add(e.blamerId); });
   const users = userIds.size ? await prisma.user.findMany({ where: { id: { in: Array.from(userIds) } }, select: { id: true, username: true } }) : [];
   const username = new Map(users.map(u => [u.id, u.username]));
@@ -199,12 +199,12 @@ async function fetchWordPage(guildId: string, word: string, page: number, pageSi
   const metadata = {
     total: totalCount,
     users: distinctUsersCount,
-    top: topBlamerGroup[0]?.blamerId ? `@${username.get(topBlamerGroup[0].blamerId) ?? topBlamerGroup[0].blamerId}` : '—',
+    top: topInsulterGroup[0]?.userId ? `${username.get(topInsulterGroup[0].userId) ?? topInsulterGroup[0].userId}` : '—',
   };
 
   const rows = entries.map(e => [
     String(e.id),
-    `@${username.get(e.userId) ?? e.userId}`,
+    `${username.get(e.userId) ?? e.userId}`,
     '\u200E' + getShortTime(new Date(e.createdAt)),
   ]);
 
