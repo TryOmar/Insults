@@ -64,7 +64,45 @@ export async function handleInteraction(interaction: Interaction) {
 
     const handler = map[interaction.commandName];
     if (!handler) return;
-    await handler(interaction);
+    
+    try {
+      await handler(interaction);
+    } catch (error) {
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling slash command ${interaction.commandName}:`, error);
+      }
+      
+      // Check if this is a Discord API error indicating the interaction is invalid
+      if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
+        console.log(`Slash command ${interaction.commandName} interaction is invalid, skipping error response`);
+        return;
+      }
+      
+      // Don't try to respond if the interaction is already acknowledged
+      if (interaction.replied || interaction.deferred) {
+        console.log(`Slash command ${interaction.commandName} already acknowledged, skipping error response`);
+        return;
+      }
+      
+      // Check if interaction is still valid before trying to respond with error
+      if (isInteractionExpired(interaction)) {
+        console.log(`Slash command ${interaction.commandName} has expired, skipping error response`);
+        return;
+      }
+      
+      try {
+        await interaction.reply({ 
+          content: 'An error occurred while processing your command. Please try again.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (replyError) {
+        // Only log if it's not an invalid interaction error
+        if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+          console.log('Failed to reply to slash command:', replyError);
+        }
+      }
+    }
 
     return;
   }

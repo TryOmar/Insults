@@ -78,18 +78,31 @@ export class PaginationManager<T, D = PaginationData<T>> {
   }
 
   async handleInitialCommand(interaction: ChatInputCommandInteraction, ...args: any[]): Promise<void> {
+    // Check if already acknowledged first
+    if (interaction.replied || interaction.deferred) {
+      console.log(`Interaction ${interaction.id} already acknowledged, skipping initial command`);
+      return;
+    }
+
     const guildId = interaction.guildId;
     if (!guildId) {
-      const replyOptions: any = { 
-        content: 'This command can only be used in a server.'
-      };
-      
-      // Only add ephemeral flag if configured to be ephemeral (default: true)
-      if (this.config.ephemeral !== false) {
-        replyOptions.flags = MessageFlags.Ephemeral;
+      try {
+        const replyOptions: any = { 
+          content: 'This command can only be used in a server.'
+        };
+        
+        // Only add ephemeral flag if configured to be ephemeral (default: true)
+        if (this.config.ephemeral !== false) {
+          replyOptions.flags = MessageFlags.Ephemeral;
+        }
+        
+        await interaction.reply(replyOptions);
+      } catch (error) {
+        // Only log if it's not an invalid interaction error
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+          console.log('Failed to reply to initial command (no guild):', error);
+        }
       }
-      
-      await interaction.reply(replyOptions);
       return;
     }
 
@@ -102,6 +115,12 @@ export class PaginationManager<T, D = PaginationData<T>> {
     isInitial: boolean = false,
     ...args: any[]
   ): Promise<void> {
+    // Check if interaction is already acknowledged first
+    if (interaction.replied || interaction.deferred) {
+      console.log(`Interaction ${interaction.id} already acknowledged, skipping response`);
+      return;
+    }
+
     // Check if interaction is still valid (not expired)
     if (isInteractionExpired(interaction)) {
       console.log(`Interaction ${interaction.id} has expired, skipping response`);
@@ -114,24 +133,17 @@ export class PaginationManager<T, D = PaginationData<T>> {
       const components = this.buildPaginationButtons(page, (data as any).totalPages, ...args);
 
       if (isInitial) {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.editReply({ 
-            embeds: [embed], 
-            components
-          });
-        } else {
-          const replyOptions: any = { 
-            embeds: [embed], 
-            components
-          };
-          
-          // Only add ephemeral flag if configured to be ephemeral (default: true)
-          if (this.config.ephemeral !== false) {
-            replyOptions.flags = MessageFlags.Ephemeral;
-          }
-          
-          await interaction.reply(replyOptions);
+        const replyOptions: any = { 
+          embeds: [embed], 
+          components
+        };
+        
+        // Only add ephemeral flag if configured to be ephemeral (default: true)
+        if (this.config.ephemeral !== false) {
+          replyOptions.flags = MessageFlags.Ephemeral;
         }
+        
+        await interaction.reply(replyOptions);
       } else {
         if ('update' in interaction) {
           await interaction.update({ embeds: [embed], components });
@@ -140,7 +152,10 @@ export class PaginationManager<T, D = PaginationData<T>> {
         }
       }
     } catch (error) {
-      console.error(`Error in pagination for ${this.config.commandName}:`, error);
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error in pagination for ${this.config.commandName}:`, error);
+      }
       
       // Check if this is a Discord API error indicating the interaction is invalid
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
@@ -178,17 +193,23 @@ export class PaginationManager<T, D = PaginationData<T>> {
           
           await interaction.reply(errorReplyOptions);
         } catch (replyError) {
-          console.log('Failed to reply with error:', replyError);
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+            console.log('Failed to reply with error:', replyError);
+          }
         }
       } else {
         try {
           if ('update' in interaction) {
             await interaction.update({ embeds: [errorEmbed], components: [] });
           } else if ('editReply' in interaction) {
-            await interaction.editReply({ embeds: [errorEmbed], components: [] });
-          }
+              await interaction.editReply({ embeds: [errorEmbed], components: [] });
+            }
         } catch (updateError) {
-          console.log('Failed to update with error:', updateError);
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(updateError) && isInteractionInvalidError(updateError))) {
+            console.log('Failed to update with error:', updateError);
+          }
         }
       }
     }
@@ -197,6 +218,12 @@ export class PaginationManager<T, D = PaginationData<T>> {
   async handleButton(customId: string, interaction: ButtonInteraction, ...args: any[]): Promise<boolean> {
     if (!customId.startsWith(this.config.customIdPrefix)) {
       return false;
+    }
+
+    // Check if already acknowledged first
+    if (interaction.replied || interaction.deferred) {
+      console.log(`Button interaction ${customId} already acknowledged, skipping`);
+      return true; // Return true to indicate we handled it (by skipping)
     }
 
     // Parse the new button format: prefix:action:sessionId
@@ -215,35 +242,43 @@ export class PaginationManager<T, D = PaginationData<T>> {
 
     let newPage = parsed.page;
 
-    switch (action) {
-      case 'first':
-        newPage = 1;
-        break;
-      case 'prev':
-        newPage = Math.max(1, parsed.page - 1);
-        break;
-      case 'next':
-        // We need to get the total pages to know the max
-        const data = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
-        newPage = Math.min((data as any).totalPages, parsed.page + 1);
-        break;
-      case 'last':
-        // We need to get the total pages
-        const data2 = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
-        newPage = (data2 as any).totalPages;
-        break;
-      case 'refresh':
-        newPage = parsed.page; // Stay on current page but refresh data
-        break;
-      default:
-        return false;
-    }
+    try {
+      switch (action) {
+        case 'first':
+          newPage = 1;
+          break;
+        case 'prev':
+          newPage = Math.max(1, parsed.page - 1);
+          break;
+        case 'next':
+          // We need to get the total pages to know the max
+          const data = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
+          newPage = Math.min((data as any).totalPages, parsed.page + 1);
+          break;
+        case 'last':
+          // We need to get the total pages
+          const data2 = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
+          newPage = (data2 as any).totalPages;
+          break;
+        case 'refresh':
+          newPage = parsed.page; // Stay on current page but refresh data
+          break;
+        default:
+          return false;
+      }
 
-    // For next and last actions, we need to pass the correct arguments
-    // The args should come from the parsed session data, not the function parameters
-    const sessionArgs = this.extractArgsFromSession(parsed);
-    await this.respondWithPage(interaction, newPage, false, ...sessionArgs);
-    return true;
+      // For next and last actions, we need to pass the correct arguments
+      // The args should come from the parsed session data, not the function parameters
+      const sessionArgs = this.extractArgsFromSession(parsed);
+      await this.respondWithPage(interaction, newPage, false, ...sessionArgs);
+      return true;
+    } catch (error) {
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling button ${customId}:`, error);
+      }
+      return true; // Return true to indicate we handled it (even if with error)
+    }
   }
 
   private extractArgsFromSession(parsed: any): any[] {
