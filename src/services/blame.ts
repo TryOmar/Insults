@@ -40,12 +40,13 @@ export function buildBlameEmbed(type: BlameEmbedType, options: {
   blamerUsername?: string;
   blamerId: string;
   insult: string;
+  insultCount: number;
   note: string | null;
   totalBlames: number;
   distinctSummary: string;
   recordId: string;
 }): EmbedBuilder {
-  const { createdAt, guildName, targetId, targetUsername, blamerUsername, blamerId, insult, note, totalBlames, distinctSummary, recordId } = options;
+  const { createdAt, guildName, targetId, targetUsername, blamerUsername, blamerId, insult, insultCount, note, totalBlames, distinctSummary, recordId } = options;
 
   const embed = new EmbedBuilder();
 
@@ -69,32 +70,40 @@ embed.addFields(
   sep
 );
 
-// Row 2: Insulter | Blamer (render with @username text if provided)
+// Row 2: Insulter | Blamer (clickable mentions)
 embed.addFields(
-  { name: '**Insulter**', value: targetUsername ? `@${targetUsername}` : userMention(targetId), inline: true },
-  { name: '**Blamer**', value: blamerUsername ? `@${blamerUsername}` : userMention(blamerId), inline: true },
+  { name: '**Insulter**', value: userMention(targetId), inline: true },
+  { name: '**Blamer**', value: userMention(blamerId), inline: true },
   sep
 );
 
-// Row 3: Insult | Note
+// Row 3: Insult | Frequency (server-wide)
 const safeNote =
   note && note.length > 0 ? (note.length > 200 ? note.slice(0, 200) : note) : '—';
 const toSpoiler = (v: string) => (v === '—' ? v : `||${v}||`);
 const wrap = (v: string) => (type === 'dm' ? v : toSpoiler(v));
 
+
 embed.addFields(
   { name: '**Insult**', value: wrap(insult), inline: true },
-  { name: '**Note**', value: wrap(safeNote), inline: true },
+  { name: '**Frequency (server-wide)**', value: String(insultCount), inline: true },
   sep
 );
 
-// Row 4: Totals (full width, so no sep needed)
+// Row 4: Note
+embed.addFields(
+  { name: '**Note**', value: wrap(safeNote), inline: false },
+);
+
 const usernameLabel = targetUsername ? `@${targetUsername}` : 'user';
 
+// Row 5: Blames against | Insults from
 embed.addFields(
   { name: `**Blames against ${usernameLabel}**`, value: String(totalBlames), inline: false },
   { name: `**Insults from ${usernameLabel}**`, value: wrap(distinctSummary), inline: false },
 );
+
+
 
 embed.setTimestamp(new Date(createdAt));
 
@@ -146,6 +155,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
   });
 
   const totalBlames = await prisma.insult.count({ where: { guildId, userId: target.id } });
+  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
   const grouped = await prisma.insult.groupBy({
     by: ['insult'],
     where: { guildId, userId: target.id },
@@ -169,7 +179,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
       used += prospectiveLen;
       itemsOnLine++;
       added++;
-      if (itemsOnLine === 6 && i !== distinctPairs.length - 1) {
+      if (itemsOnLine === 5 && i !== distinctPairs.length - 1) {
         if (used + 1 > 1000) break; // for '\n'
         buffer += '\n';
         used += 1;
@@ -188,6 +198,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     blamerUsername: blamer.username,
     blamerId: blamer.id,
     insult,
+    insultCount,
     note,
     totalBlames,
     distinctSummary,
@@ -202,6 +213,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     blamerUsername: blamer.username,
     blamerId: blamer.id,
     insult,
+    insultCount,
     note,
     totalBlames,
     distinctSummary,
