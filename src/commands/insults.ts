@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
@@ -55,8 +55,57 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const scope: ViewScope = wordRaw ? { mode: 'word', guildId, word: wordRaw } : { mode: 'all', guildId };
+  // If no word provided, show a leaderboard-style preview
+  if (!wordRaw) {
+    await showInsultsPreview(interaction, guildId);
+    return;
+  }
+
+  const scope: ViewScope = { mode: 'word', guildId, word: wordRaw };
   await respondWithInsults(interaction, scope, 1, true);
+}
+
+async function showInsultsPreview(interaction: ChatInputCommandInteraction, guildId: string) {
+  // Get top insults by count with top blamer info
+  const topInsults = await prisma.insult.groupBy({
+    by: ['insult'],
+    where: { guildId },
+    _count: { insult: true },
+    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+    take: 10,
+  });
+
+  if (topInsults.length === 0) {
+    await interaction.reply({ content: 'No insults recorded yet.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const LRM = '\u200E'; // Left-to-Right Mark
+  const insultList = topInsults.map((item, index) => {
+    const rank = index + 1;
+    let rankText = '';
+    if (rank === 1) {
+      rankText = '**1st:** 🔥';
+    } else if (rank === 2) {
+      rankText = '**2nd:** ⚡';
+    } else if (rank === 3) {
+      rankText = '**3rd:** 💥';
+    } else {
+      rankText = `**${rank}.**`;
+    }
+    
+    const line = `${rankText} ${item.insult} - ${item._count.insult}`;
+    return LRM + line; // Add LRM at the start of each line
+  }).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle('🔥 Top Insults')
+    .setDescription(insultList)
+    .setColor(0xFF6B6B) // Light red color
+    .setFooter({ text: 'Use /insults <word> for details' })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 async function fetchGeneralPage(guildId: string, page: number) {
@@ -101,36 +150,22 @@ async function fetchGeneralPage(guildId: string, page: number) {
 
 async function fetchWordPage(guildId: string, word: string, page: number) {
   const where = { guildId, insult: word } as const;
-  const [totalCount, distinctUsersCount, firstRow, lastRow, topBlamerGroup, entries] = await Promise.all([
+  const [totalCount, distinctUsersCount, topBlamerGroup, entries] = await Promise.all([
     prisma.insult.count({ where }),
     prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
-    prisma.insult.findFirst({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { blamerId: true, createdAt: true } }),
-    prisma.insult.findFirst({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { blamerId: true, createdAt: true } }),
     prisma.insult.groupBy({ by: ['blamerId'], where, _count: { blamerId: true }, orderBy: [{ _count: { blamerId: 'desc' } }, { blamerId: 'asc' }], take: 1 }),
     prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
   ]);
 
   const userIds = new Set<string>();
-  if (firstRow?.blamerId) userIds.add(firstRow.blamerId);
-  if (lastRow?.blamerId) userIds.add(lastRow.blamerId);
   if (topBlamerGroup[0]?.blamerId) userIds.add(topBlamerGroup[0].blamerId);
   entries.forEach(e => { if (e.userId) userIds.add(e.userId); if (e.blamerId) userIds.add(e.blamerId); });
   const users = userIds.size ? await prisma.user.findMany({ where: { id: { in: Array.from(userIds) } }, select: { id: true, username: true } }) : [];
   const username = new Map(users.map(u => [u.id, u.username]));
 
-  function fmt(d: Date | undefined | null): string {
-    if (!d) return '—';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yy = String(d.getFullYear()).slice(-2);
-    return `${dd}-${mm}-${yy}`;
-  }
-
   const metadata = {
     total: totalCount,
     users: distinctUsersCount,
-    first: firstRow ? `${fmt(new Date(firstRow.createdAt))} by @${username.get(firstRow.blamerId) ?? firstRow.blamerId}` : '—',
-    last: lastRow ? `${fmt(new Date(lastRow.createdAt))} by @${username.get(lastRow.blamerId) ?? lastRow.blamerId}` : '—',
     top: topBlamerGroup[0]?.blamerId ? `@${username.get(topBlamerGroup[0].blamerId) ?? topBlamerGroup[0].blamerId}` : '—',
   };
 
@@ -164,51 +199,10 @@ function buildComponents(scope: ViewScope, page: number, totalCount: number) {
 
 export async function respondWithInsults(interaction: ChatInputCommandInteraction | ButtonInteraction, scope: ViewScope, page: number, isInitial = false) {
   const guildId = (interaction.guildId ?? (scope as any).guildId) as string;
-  const effectiveScope: ViewScope = scope.mode === 'all' ? { mode: 'all', guildId } : { mode: 'word', guildId, word: scope.word } as any;
-
-  if (effectiveScope.mode === 'all') {
-    const { totalRecorded, distinctInsultsTotal, items } = await fetchGeneralPage(guildId, page);
-    const headers = ['Insult', 'Count', 'First', 'Last', 'Top'];
-    const rows = items.map(i => [
-      i.insult.replace(/"/g, 'a'), // Remove double quotes around insults
-      String(i.count),
-      i.first.replace('@', ''), // Remove @ from names
-      i.last.replace('@', ''),
-      i.top.replace('@', '')
-    ]);
-    const config: TableConfig = {
-      columns: [
-        { maxWidth: 16 },   // Insult
-        { maxWidth: 5 },   // Count
-        { maxWidth: 6 },   // First
-        { maxWidth: 6 },   // Last
-        { maxWidth: 6 }    // Top
-      ],
-      emptyMessage: 'No insults recorded yet'
-    };
-    const table = renderTable(headers, rows, config);
-    const embed = new EmbedBuilder()
-      .setTitle('🧾 Insults — Server Overview')
-      .setDescription(table)
-      .addFields(
-        { name: 'Total recorded insults', value: String(totalRecorded), inline: true },
-        { name: 'Total distinct insults', value: String(distinctInsultsTotal), inline: true },
-      )
-      .setTimestamp();
-    const components = buildComponents(effectiveScope, page, distinctInsultsTotal);
-
-    if (isInitial) {
-      await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
-    } else if ('update' in interaction) {
-      await (interaction as ButtonInteraction).update({ embeds: [embed], components });
-    } else if ('editReply' in interaction) {
-      await (interaction as any).editReply({ embeds: [embed], components });
-    }
-    return;
-  }
+  const word = (scope as any).word;
 
   // word-specific
-  const { metadata, rows, totalCount } = await fetchWordPage(guildId, effectiveScope.word, page);
+  const { metadata, rows, totalCount } = await fetchWordPage(guildId, word, page);
   const headers = ['ID', 'User', 'Blamer', 'Note', 'When'];
   const config: TableConfig = {
     columns: [
@@ -222,17 +216,16 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
   };
   const table = renderTable(headers, rows, config);
   const embed = new EmbedBuilder()
-    .setTitle(`🧾 Insult: "${effectiveScope.word}"`)
+    .setTitle(`💀 Insult: "${word}"`)
     .setDescription(table)
     .addFields(
       { name: 'Total', value: String(metadata.total), inline: true },
       { name: 'Users', value: String(metadata.users), inline: true },
-      { name: 'First', value: metadata.first, inline: false },
-      { name: 'Last', value: metadata.last, inline: false },
-      { name: 'Top', value: metadata.top, inline: true },
+      { name: 'Top Blamer', value: metadata.top, inline: true },
     )
+    .setColor(0xDC143C) // Dark red color
     .setTimestamp();
-  const components = buildComponents(effectiveScope, page, metadata.total);
+  const components = buildComponents(scope, page, metadata.total);
 
   if (isInitial) {
     await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
