@@ -30,9 +30,26 @@ export async function handleMessage(message: Message) {
   try {
     const guildId = message.guildId;
     if (!guildId) return;
-    const setup = await prisma.setup.findUnique({ where: { guildId } });
-    console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled: (setup as any)?.radarEnabled ?? undefined });
-    //if (!setup || !setup.radarEnabled) return;
+    let setup = await prisma.setup.findUnique({ where: { guildId } });
+    if (!setup) {
+      // Auto-bootstrap radar ON if no row exists yet for this guild
+      try {
+        setup = await prisma.setup.create({
+          data: ({
+            guildId,
+            channelId: message.channelId,
+            leaderboardMessageId: '0',
+            radarEnabled: true,
+          } as any),
+        });
+        console.log('[radar] setup bootstrapped and enabled', { guildId });
+      } catch (e) {
+        console.warn('[radar] failed to bootstrap setup; disabling radar for message', { guildId, error: e });
+        return;
+      }
+    }
+    console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled: (setup as any).radarEnabled });
+    if (!(setup as any).radarEnabled) return;
 
     const content = message.content;
     if (!content || content.trim().length === 0) return;
@@ -116,9 +133,14 @@ export async function handleMessage(message: Message) {
     });
 
     const publicEmbed = await buildBlameEmbedFromRecord('public', record, message.guild?.name);
-    await message.reply({ embeds: [publicEmbed] });
-    await message.react('👍');
-    await message.react('👎');
+    const replyMsg = await message.reply({ embeds: [publicEmbed] });
+    try {
+      await replyMsg.react('👍');
+      await replyMsg.react('👎');
+    } catch {}
+    try {
+      await message.react('💀');
+    } catch {}
 
 
     try {
