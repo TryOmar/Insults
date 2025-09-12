@@ -126,7 +126,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
 
   const fields: { name: string; value: string; inline?: boolean }[] = [];
   if (scope.userId) {
-    fields.push({ name: 'User', value: `<@${scope.userId}> (${targetUsername ?? scope.userId})`, inline: true });
+    fields.push({ name: 'User', value: `<@${scope.userId}> (${targetUsername ?? scope.userId})`, inline: false });
   }
   fields.push(
     { name: 'Total Blames', value: String(totalCount), inline: true },
