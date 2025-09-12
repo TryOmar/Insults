@@ -74,7 +74,6 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
   const items = entries.map((e: any) => [
     `#${e.originalInsultId}`, // Show original insult ID
     e.insult,
-    `\u200E@${userMap.get(e.blamerId) ?? e.blamerId}`,
     `@${userMap.get(e.unblamerId) ?? e.unblamerId}`,
   ]);
 
@@ -91,12 +90,11 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
 function buildArchiveEmbed(data: PaginationData<any>): EmbedBuilder {
   const { items, currentPage, totalPages } = data;
   
-  const headers = ['ID', 'Insult', 'Insulter', 'Unblamer'];
+  const headers = ['ID', 'Insult', 'Unblamer'];
   const config: TableConfig = {
     columns: [
       { maxWidth: 6 },  // ID
       { maxWidth: 8 }, // Insult
-      { maxWidth: 10 },  // Insulter
       { maxWidth: 10 },  // Unblamer
     ],
     emptyMessage: 'No archived records',
