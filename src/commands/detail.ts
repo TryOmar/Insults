@@ -13,13 +13,40 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const id = interaction.options.getInteger('id', true);
   const guildName = interaction.guild?.name ?? 'Unknown guild';
 
-  const record = await prisma.insult.findUnique({ where: { id } });
+  // First check active insults
+  let record = await prisma.insult.findUnique({ where: { id } });
+  let isArchived = false;
+
+  // If not found in active insults, check archived insults by original insult ID
+  if (!record) {
+    const archivedRecord = await (prisma as any).archive.findUnique({ where: { originalInsultId: id } });
+    if (archivedRecord) {
+      // Convert archived record to match the expected format
+      record = {
+        id: archivedRecord.originalInsultId, // Use the original insult ID
+        guildId: archivedRecord.guildId,
+        userId: archivedRecord.userId,
+        blamerId: archivedRecord.blamerId,
+        insult: archivedRecord.insult,
+        note: archivedRecord.note,
+        createdAt: new Date(archivedRecord.createdAt),
+      };
+      isArchived = true;
+    }
+  }
+
   if (!record) {
     await interaction.reply({ content: `No record found for ID ${id}.`, flags: MessageFlags.Ephemeral });
     return;
   }
 
   const embed = await buildBlameEmbedFromRecord('public', record, guildName);
+  
+  // Add "Archived" to the title if it's an archived record
+  if (isArchived) {
+    embed.setTitle(`🗃️ Archived - ${embed.data.title || 'Blame Details'}`);
+  }
+
   await interaction.reply({ embeds: [embed] });
   const sent = await interaction.fetchReply();
   try {

@@ -47,41 +47,51 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     };
   }
 
-  const entries = await prisma.archive.findMany({
+  const entries = await (prisma as any).archive.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-  } as any);
+  });
 
   if (!entries.length) {
     await interaction.reply({ content: 'No archived records found for the given filters.', flags: MessageFlags.Ephemeral });
     return;
   }
 
-  const headers = ['ID', 'Insulted', 'Blamer', 'Unblamer', 'Insult', 'Note', 'Blame Date', 'Unblamed At'];
-  const rows = entries.map(e => [
-    `#${e.id}`,
-    userMention(e.userId),
-    userMention(e.blamerId),
-    userMention(e.unblamerId),
+  // Fetch usernames for all users involved
+  const userIds = [...new Set([
+    ...entries.map((e: any) => e.userId),
+    ...entries.map((e: any) => e.blamerId),
+    ...entries.map((e: any) => e.unblamerId)
+  ])];
+  
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, username: true }
+  });
+  
+  const userMap = new Map(users.map(u => [u.id, u.username]));
+
+  const headers = ['ID', 'Insult', 'Note', 'Insulter', 'Unblamer'];
+  const rows = entries.map((e: any) => [
+    `#${e.originalInsultId}`, // Show original insult ID
     e.insult,
     e.note ?? '—',
-    '\u200E' + getShortTime(new Date(e.createdAt)),
-    '\u200E' + getShortTime(new Date((e as any).unblamedAt ?? new Date())),
+    `\u200E@${userMap.get(e.blamerId) ?? e.blamerId}`,
+    `@${userMap.get(e.unblamerId) ?? e.unblamerId}`,
   ]);
 
   const config: TableConfig = {
     columns: [
-      { maxWidth: 6 },   // ID
-      { maxWidth: 10 },  // Insulted
-      { maxWidth: 10 },  // Blamer
-      { maxWidth: 10 },  // Unblamer
-      { maxWidth: 18 },  // Insult
-      { maxWidth: 18 },  // Note
-      { maxWidth: 8 },   // Blame Date
-      { maxWidth: 10 },  // Unblamed At
+      { maxWidth: 6 },  // ID
+      { maxWidth: 12 }, // Insult
+      { maxWidth: 12 }, // Note
+      { maxWidth: 8 },  // Insulter
+      { maxWidth: 8 },  // Unblamer
     ],
     emptyMessage: 'No archived records',
   };
+  
+  
 
   const table = renderTable(headers, rows, config);
   const embed = new EmbedBuilder()

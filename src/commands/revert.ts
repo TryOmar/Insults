@@ -26,7 +26,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const isAdmin = member?.permissions.has(PermissionFlagsBits.Administrator) ?? false;
 
   type Result = 
-    | { kind: 'restored'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
+    | { kind: 'restored'; id: number; originalId: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
     | { kind: 'not_found'; id: number }
     | { kind: 'forbidden'; id: number }
     | { kind: 'failed'; id: number };
@@ -34,7 +34,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const results: Result[] = [];
 
   for (const id of ids) {
-    const found = await (prisma as any).archive.findUnique({ where: { id } });
+    const found = await (prisma as any).archive.findUnique({ where: { originalInsultId: id } });
     if (!found) {
       results.push({ kind: 'not_found', id });
       continue;
@@ -45,20 +45,31 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       continue;
     }
     try {
-      await prisma.$transaction([
-        prisma.insult.create({
-          data: {
-            guildId: found.guildId,
-            userId: found.userId,
-            blamerId: found.blamerId,
-            insult: found.insult,
-            note: found.note ?? null,
-            createdAt: new Date(found.createdAt),
-          }
-        }),
-        (prisma as any).archive.delete({ where: { id } })
-      ]);
-      results.push({ kind: 'restored', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+      // Create the restored insult record
+      const restoredInsult = await prisma.insult.create({
+        data: {
+          guildId: found.guildId,
+          userId: found.userId,
+          blamerId: found.blamerId,
+          insult: found.insult,
+          note: found.note ?? null,
+          createdAt: new Date(found.createdAt),
+        }
+      });
+      
+      // Delete the archived record
+      await (prisma as any).archive.delete({ where: { originalInsultId: id } });
+      
+      results.push({ 
+        kind: 'restored', 
+        id: restoredInsult.id, // Use the new ID from the restored record
+        originalId: id, // Keep track of the original insult ID
+        insult: found.insult, 
+        userId: found.userId, 
+        blamerId: found.blamerId, 
+        note: found.note ?? null, 
+        createdAt: new Date(found.createdAt) 
+      });
     } catch {
       results.push({ kind: 'failed', id });
     }
@@ -71,7 +82,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Build pages: summary + detail pages for restored
   const pages: Page[] = [];
-  const successIds = restored.map(d => `#${d.id}`).join(', ') || '—';
+  const successIds = restored.map(d => `Original #${d.originalId} → Restored #${d.id}`).join('\n') || '—';
   const otherParts: string[] = [];
   if (notFound.length) otherParts.push(`Not found: ${notFound.map(n => `#${n.id}`).join(', ')}`);
   if (forbidden.length) otherParts.push(`Not allowed: ${forbidden.map(f => `#${f.id}`).join(', ')}`);
@@ -91,7 +102,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const embed = new EmbedBuilder()
       .setTitle(`Restored Blame #${d.id}`)
       .addFields(
-        { name: 'ID', value: String(d.id), inline: true },
+        { name: 'New ID', value: String(d.id), inline: true },
+        { name: 'Original Insult ID', value: String(d.originalId), inline: true },
         { name: 'Insult', value: d.insult, inline: true },
         { name: 'Note', value: d.note ?? '—', inline: false },
         { name: 'Insulter', value: userMention(d.userId), inline: true },

@@ -39,19 +39,20 @@ model Setup {
 }
 
 model Archive {
-  id         Int      @id @default(autoincrement())
-  guildId    String
-  user       User     @relation("UserArchives", fields: [userId], references: [id])
-  userId     String
-  blamer     User     @relation("BlamerArchives", fields: [blamerId], references: [id])
-  blamerId   String
-  insult     String
-  note       String?
-  createdAt  DateTime
+  id              Int      @id @default(autoincrement())
+  originalInsultId Int      @unique // The original insult ID from the Insult table
+  guildId         String
+  user            User     @relation("UserArchives", fields: [userId], references: [id])
+  userId          String
+  blamer          User     @relation("BlamerArchives", fields: [blamerId], references: [id])
+  blamerId        String
+  insult          String
+  note            String?
+  createdAt       DateTime
 
-  unblamer   User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
-  unblamerId String
-  unblamedAt DateTime @default(now())
+  unblamer        User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
+  unblamerId      String
+  unblamedAt      DateTime @default(now())
 
   @@index([guildId, userId])
   @@index([guildId, blamerId])

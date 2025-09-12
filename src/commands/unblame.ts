@@ -46,6 +46,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     await prisma.$transaction([
       (prisma as any).archive.create({
         data: {
+          originalInsultId: found.id, // Store the original insult ID
           guildId: found.guildId,
           userId: found.userId,
           blamerId: found.blamerId,
