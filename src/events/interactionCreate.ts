@@ -70,6 +70,9 @@ export async function handleInteraction(interaction: Interaction) {
     if (id.startsWith('insults:')) {
       await insults.handleButton(id, button);
     }
+    if (id.startsWith('rank:')) {
+      await rank.handleButton(id, button);
+    }
     return;
   }
 
