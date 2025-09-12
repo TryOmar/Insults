@@ -30,6 +30,77 @@ function normalizeInput(value: string | null | undefined, maxLen: number): strin
   return trimmed;
 }
 
+export type BlameEmbedType = 'public' | 'dm';
+
+export function buildBlameEmbed(type: BlameEmbedType, options: {
+  createdAt: Date;
+  guildName?: string | null;
+  targetId: string;
+  targetUsername?: string;
+  blamerUsername?: string;
+  blamerId: string;
+  insult: string;
+  note: string | null;
+  totalBlames: number;
+  distinctSummary: string;
+  recordId: string;
+}): EmbedBuilder {
+  const { createdAt, guildName, targetId, targetUsername, blamerUsername, blamerId, insult, note, totalBlames, distinctSummary, recordId } = options;
+
+  const embed = new EmbedBuilder();
+
+  // Invisible spacer field for 2-per-line layout
+const sep = { name: '\u200B', value: '\u200B', inline: true } as const;
+
+if (type === 'public') {
+  embed.setTitle('Blame recorded')
+       .setColor(0x00B894)
+       .setFooter({ text: 'Blame created' });
+} else {
+  embed.setTitle(`You were blamed for saying: ${insult}`);
+    embed.setColor(0xDC143C) // dark red color
+       .setFooter({ text: `Reported on ${guildName ?? 'Unknown'}` });
+}
+
+// Row 1: Server | Blame ID
+embed.addFields(
+  { name: '**Server**', value: guildName ?? 'Unknown', inline: true },
+  { name: '**Blame ID**', value: recordId, inline: true },
+  sep
+);
+
+// Row 2: Insulter | Blamer (render with @username text if provided)
+embed.addFields(
+  { name: '**Insulter**', value: targetUsername ? `@${targetUsername}` : userMention(targetId), inline: true },
+  { name: '**Blamer**', value: blamerUsername ? `@${blamerUsername}` : userMention(blamerId), inline: true },
+  sep
+);
+
+// Row 3: Insult | Note
+const safeNote =
+  note && note.length > 0 ? (note.length > 200 ? note.slice(0, 200) : note) : '—';
+const toSpoiler = (v: string) => (v === '—' ? v : `||${v}||`);
+const wrap = (v: string) => (type === 'dm' ? v : toSpoiler(v));
+
+embed.addFields(
+  { name: '**Insult**', value: wrap(insult), inline: true },
+  { name: '**Note**', value: wrap(safeNote), inline: true },
+  sep
+);
+
+// Row 4: Totals (full width, so no sep needed)
+const usernameLabel = targetUsername ? `@${targetUsername}` : 'user';
+
+embed.addFields(
+  { name: `**Blames against ${usernameLabel}**`, value: String(totalBlames), inline: false },
+  { name: `**Insults from ${usernameLabel}**`, value: wrap(distinctSummary), inline: false },
+);
+
+embed.setTimestamp(new Date(createdAt));
+
+return embed;
+}
+
 export async function blameUser(params: BlameParams): Promise<{ ok: true; data: BlameSuccess } | { ok: false; error: BlameError }> {
   const { guildId, guildName, target, blamer, insultRaw, noteRaw, dmTarget = true } = params;
 
@@ -82,44 +153,60 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
   });
   const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
-  let distinctSummary = distinctPairs.join(', ');
-  if (distinctSummary.length === 0) distinctSummary = '—';
-  if (distinctSummary.length > 1000) {
-    const truncated: string[] = [];
+  let distinctSummary = '—';
+  if (distinctPairs.length > 0) {
+    let buffer = '';
     let used = 0;
-    for (const part of distinctPairs) {
-      const addLen = (truncated.length === 0 ? 0 : 2) + part.length;
-      if (used + addLen > 1000) break;
-      truncated.push(part);
-      used += addLen;
+    let itemsOnLine = 0;
+    let added = 0;
+    for (let i = 0; i < distinctPairs.length; i++) {
+      const part = distinctPairs[i];
+      const sep = itemsOnLine === 0 ? '' : ', ';
+      const prospective = sep + part;
+      const prospectiveLen = prospective.length;
+      if (used + prospectiveLen > 1000) break;
+      buffer += prospective;
+      used += prospectiveLen;
+      itemsOnLine++;
+      added++;
+      if (itemsOnLine === 6 && i !== distinctPairs.length - 1) {
+        if (used + 1 > 1000) break; // for '\n'
+        buffer += '\n';
+        used += 1;
+        itemsOnLine = 0;
+      }
     }
-    const remaining = distinctPairs.length - truncated.length;
-    distinctSummary = remaining > 0 ? `${truncated.join(', ')} … (+${remaining} more)` : truncated.join(', ');
+    const remaining = distinctPairs.length - added;
+    distinctSummary = remaining > 0 ? `${buffer} … (+${remaining} more)` : buffer;
   }
 
-  const publicEmbed = new EmbedBuilder()
-    .setTitle('Blame recorded')
-    .addFields(
-      { name: 'Insulted User', value: userMention(target.id), inline: true },
-      { name: 'Blamed By', value: userMention(blamer.id), inline: true },
-      { name: 'Insult', value: insult, inline: false },
-      { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
-      { name: 'Total Blames', value: String(totalBlames), inline: true },
-      { name: 'Total Insults', value: distinctSummary, inline: false },
-    )
-    .setTimestamp(new Date(record.createdAt));
+  const publicEmbed = buildBlameEmbed('public', {
+    createdAt: new Date(record.createdAt),
+    guildName,
+    targetId: target.id,
+    targetUsername: target.username,
+    blamerUsername: blamer.username,
+    blamerId: blamer.id,
+    insult,
+    note,
+    totalBlames,
+    distinctSummary,
+    recordId: String(record.id),
+  });
 
-  const dmEmbed = new EmbedBuilder()
-    .setTitle('You were blamed')
-    .addFields(
-      { name: 'Server', value: guildName ?? 'Unknown', inline: true },
-      { name: 'By', value: userMention(blamer.id), inline: true },
-      { name: 'Insult', value: insult, inline: false },
-      { name: 'Note', value: note && note.length > 0 ? note : '—', inline: false },
-      { name: 'Total Blames', value: String(totalBlames), inline: true },
-      { name: 'Total Insults', value: distinctSummary, inline: false },
-    )
-    .setTimestamp(new Date(record.createdAt));
+  const dmEmbed = buildBlameEmbed('dm', {
+    createdAt: new Date(record.createdAt),
+    guildName,
+    targetId: target.id,
+    targetUsername: target.username,
+    blamerUsername: blamer.username,
+    blamerId: blamer.id,
+    insult,
+    note,
+    totalBlames,
+    distinctSummary,
+    recordId: String(record.id),
+  });
 
   let dmSent = false;
   if (dmTarget) {
