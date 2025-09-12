@@ -38,7 +38,7 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show insult stats overall or for a specific word')
   .addStringOption(opt =>
     opt.setName('word')
-      .setDescription('Optional: specific insult token (letters and numbers allowed; no spaces or symbols)')
+      .setDescription('Optional: specific insult phrase (up to 3 words)')
       .setRequired(false)
   );
 
@@ -50,9 +50,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   const wordRaw = interaction.options.getString('word', false);
-  if (wordRaw && !/^[\p{L}\p{Nd}]+$/u.test(wordRaw)) {
-    await interaction.reply({ content: 'Word must be a single token with only letters and numbers. No spaces or symbols.', flags: MessageFlags.Ephemeral });
-    return;
+  if (wordRaw) {
+    const normalized = wordRaw
+      .toLowerCase()
+      .split(/[^\p{L}\p{Nd}]+/u)
+      .filter(Boolean)
+      .join(' ');
+    const wc = normalized.split(/\s+/).filter(Boolean).length;
+    if (wc === 0) {
+      await interaction.reply({ content: 'Please enter an insult phrase.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (wc > 3) {
+      await interaction.reply({ content: 'Insult phrase must be up to 3 words.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    // Overwrite the raw input with normalized for exact DB match
+    (interaction as any)._normalizedWord = normalized;
   }
 
   // If no word provided, show a leaderboard-style preview
@@ -61,7 +75,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const scope: ViewScope = { mode: 'word', guildId, word: wordRaw };
+  const scope: ViewScope = { mode: 'word', guildId, word: ((interaction as any)._normalizedWord ?? wordRaw) as string };
   await respondWithInsults(interaction, scope, 1, true);
 }
 
@@ -174,7 +188,7 @@ async function fetchWordPage(guildId: string, word: string, page: number) {
     `@${username.get(e.userId) ?? e.userId}`,
     `@${username.get(e.blamerId) ?? e.blamerId}`,
     e.note ?? '—',
-    getShortTime(new Date(e.createdAt)),
+    '\u200E' + getShortTime(new Date(e.createdAt)),
   ]);
 
   return { metadata, rows, totalCount };
@@ -207,10 +221,10 @@ export async function respondWithInsults(interaction: ChatInputCommandInteractio
   const config: TableConfig = {
     columns: [
       { maxWidth: 4 },   // ID
-      { maxWidth: 14 },   // User
-      { maxWidth: 10 },   // Blamer
-      { maxWidth: 12 },   // Note
-      { maxWidth: 6 }     // When
+      { maxWidth: 6 },   // User
+      { maxWidth: 6 },   // Blamer
+      { maxWidth: 20 },   // Note
+      { maxWidth: 8 }     // When
     ],
     emptyMessage: 'No occurrences found for this insult'
   };
