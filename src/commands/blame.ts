@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { blameUser } from '../services/blame.js';
 
 export const data = new SlashCommandBuilder()
@@ -8,7 +8,10 @@ export const data = new SlashCommandBuilder()
     opt.setName('user').setDescription('The insulted user').setRequired(true)
   )
   .addStringOption((opt) =>
-    opt.setName('insult').setDescription('Single token: letters and numbers allowed. No spaces or symbols.').setRequired(true)
+    opt
+      .setName('insult')
+      .setDescription('Enter a single insult (up to 3 words).')
+      .setRequired(true)
   )
   .addStringOption((opt) =>
     opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
@@ -17,7 +20,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -36,7 +39,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   });
 
   if (!result.ok) {
-    await interaction.reply({ content: result.error.message, ephemeral: true });
+    await interaction.reply({ content: result.error.message, flags: MessageFlags.Ephemeral });
     return;
   }
 

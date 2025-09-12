@@ -33,6 +33,7 @@ model Setup {
   guildId              String   @id
   channelId            String
   leaderboardMessageId String
+  radarEnabled         Boolean  @default(false)
   createdAt            DateTime @default(now())
 
   @@index([channelId])

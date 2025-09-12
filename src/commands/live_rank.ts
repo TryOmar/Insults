@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, TextChannel } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, TextChannel, MessageFlags } from 'discord.js';
 import { buildLeaderboardEmbed } from '../utils/leaderboard.js';
 
 // Track the last live leaderboard message per guild
@@ -11,7 +11,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId || !interaction.channel) {
-    await interaction.reply({ content: 'Use this in a server text channel.', ephemeral: true });
+    await interaction.reply({ content: 'Use this in a server text channel.', flags: MessageFlags.Ephemeral });
     return;
   }
 

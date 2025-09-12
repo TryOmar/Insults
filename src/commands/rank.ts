@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, userMention } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, userMention, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
 
 const PAGE_SIZE = 10;
@@ -67,7 +67,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -114,7 +114,7 @@ export async function handleButton(customId: string, interaction: any) {
   
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -139,7 +139,7 @@ export async function handleButton(customId: string, interaction: any) {
 
   const leaderboardData = await fetchLeaderboardData(guildId, newPage);
   if (leaderboardData.length === 0) {
-    await interaction.reply({ content: 'No insults recorded yet.', ephemeral: true });
+    await interaction.reply({ content: 'No insults recorded yet.', flags: MessageFlags.Ephemeral });
     return;
   }
 

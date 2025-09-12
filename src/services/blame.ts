@@ -23,11 +23,14 @@ export interface BlameError {
 
 function normalizeInput(value: string | null | undefined, maxLen: number): string | null {
   if (value == null) return null;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return '';
-  if (trimmed.length > maxLen) return trimmed.slice(0, maxLen);
-  if (trimmed.includes('\n')) return trimmed.replace(/\n+/g, ' ');
-  return trimmed;
+  // Remove only leading spaces; keep internal and trailing spaces
+  let normalized = value.replace(/^\s+/, '');
+  // Replace newlines with a single space (Discord inputs rarely include these)
+  if (normalized.includes('\n')) normalized = normalized.replace(/\n+/g, ' ');
+  if (normalized.length === 0) return '';
+  if (normalized.length > maxLen) normalized = normalized.slice(0, maxLen);
+  // Store as lowercase for consistency
+  return normalized.toLowerCase();
 }
 
 export type BlameEmbedType = 'public' | 'dm';
@@ -78,8 +81,7 @@ embed.addFields(
 );
 
 // Row 3: Insult | Frequency (server-wide)
-const safeNote =
-  note && note.length > 0 ? (note.length > 200 ? note.slice(0, 200) : note) : '—';
+const safeNote = note && note.length > 0 ? note : '—';
 const toSpoiler = (v: string) => (v === '—' ? v : `||${v}||`);
 const wrap = (v: string) => (type === 'dm' ? v : toSpoiler(v));
 
@@ -122,15 +124,20 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
   }
 
   const insult = normalizeInput(insultRaw, 140);
-  const note = normalizeInput(noteRaw ?? null, 200);
+  // Keep full note; only collapse newlines and trim leading spaces in normalizer
+  const note = normalizeInput(noteRaw ?? null, Number.MAX_SAFE_INTEGER);
 
   if (!insult) {
     return { ok: false, error: { message: 'Insult must be 1–140 characters.' } };
   }
 
-  if (!/^[\p{L}\p{Nd}]+$/u.test(insult)) {
-    return { ok: false, error: { message: 'Insult must be a single token with only letters and numbers. No spaces or symbols.' } };
+  // Enforce up to 3 words for consistency with radar (supports 1–3 word phrases)
+  const wordCount = insult.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 3) {
+    return { ok: false, error: { message: 'Insult must be a single phrase of up to 3 words.' } };
   }
+
+  // Allow spaces inside the insult phrase; no strict single-token rule
 
   await prisma.user.upsert({
     where: { id: target.id },

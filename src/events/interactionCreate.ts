@@ -8,6 +8,7 @@ import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as setup from '../commands/setup.js';
+import * as radar from '../commands/radar.js';
 
 async function fetchChannelMessage(interaction: Interaction, channelId: string, messageId: string) {
   try {
@@ -46,6 +47,7 @@ export async function handleInteraction(interaction: Interaction) {
       history: history.execute,
       insults: insults.execute,
       setup: setup.execute,
+      radar: radar.execute,
     };
 
     const handler = map[interaction.commandName];
