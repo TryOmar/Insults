@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { blameUser } from '../services/blame.js';
+import { safeInteractionReply } from '../utils/interactionValidation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('blame')
@@ -20,9 +21,20 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    const success = await safeInteractionReply(interaction, { 
+      content: 'This command can only be used in a server.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
     return;
   }
+
+  // Defer the interaction since we know this will take time due to database operations
+  // We defer without ephemeral flag so the final response can be public
+  const success = await safeInteractionReply(interaction, { 
+    content: 'Processing your blame...' 
+  });
+  if (!success) return;
 
   const target = interaction.options.getUser('user', true);
   const insultRaw = interaction.options.getString('insult', true);
@@ -39,13 +51,22 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   });
 
   if (!result.ok) {
-    await interaction.reply({ content: result.error.message, flags: MessageFlags.Ephemeral });
+    const success = await safeInteractionReply(interaction, { 
+      content: result.error.message, 
+      flags: MessageFlags.Ephemeral 
+    }, false);
+    if (!success) return;
     return;
   }
 
-  await interaction.reply({ embeds: [result.data.publicEmbed] });
-  const sent = await interaction.fetchReply();
+  // Edit the deferred message with the actual result (public response)
+  const success2 = await safeInteractionReply(interaction, { 
+    embeds: [result.data.publicEmbed] 
+  }, false);
+  if (!success2) return;
+
   try {
+    const sent = await interaction.fetchReply();
     // Add thumbs up/down reactions to the public message
     if ('react' in sent && typeof sent.react === 'function') {
       await sent.react('👍');

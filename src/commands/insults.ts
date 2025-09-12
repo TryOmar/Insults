@@ -252,7 +252,8 @@ function createInsultsPaginationManager(): PaginationManager<any, PaginationData
     {
       pageSize: PAGE_SIZE,
       commandName: 'insults',
-      customIdPrefix: 'insults'
+      customIdPrefix: 'insults',
+      ephemeral: false // Make responses public
     },
     {
       fetchData: async (page: number, pageSize: number, scope: ViewScope) => {

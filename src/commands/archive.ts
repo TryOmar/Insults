@@ -118,7 +118,8 @@ function createArchivePaginationManager(): PaginationManager<any> {
     {
       pageSize: PAGE_SIZE,
       commandName: 'archive',
-      customIdPrefix: 'archive'
+      customIdPrefix: 'archive',
+      ephemeral: false // Make responses public
     },
     {
       fetchData: async (page: number, pageSize: number, filter: ArchiveFilter) => {

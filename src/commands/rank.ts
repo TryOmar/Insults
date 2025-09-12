@@ -85,7 +85,8 @@ function createRankPaginationManager(): PaginationManager<{ userId: string; poin
     {
       pageSize: PAGE_SIZE,
       commandName: 'rank',
-      customIdPrefix: 'rank'
+      customIdPrefix: 'rank',
+      ephemeral: false // Make responses public
     },
     {
       fetchData: async (page: number, pageSize: number, guildId: string) => {

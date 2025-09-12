@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
+import { safeInteractionReply } from '../utils/interactionValidation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
@@ -18,9 +19,20 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Extract all numeric IDs from input (split by any non-digit separators)
   const rawIds = (raw.match(/\d+/g) || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v));
   if (rawIds.length === 0) {
-    await interaction.reply({ content: 'Please provide a valid blame ID.', flags: MessageFlags.Ephemeral });
+    const success = await safeInteractionReply(interaction, { 
+      content: 'Please provide a valid blame ID.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
     return;
   }
+
+  // Defer the interaction since we know this will take time due to database operations
+  // We defer without ephemeral flag so the final response can be public
+  const success = await safeInteractionReply(interaction, { 
+    content: 'Processing unblame request...' 
+  });
+  if (!success) return;
   
   // Remove duplicate IDs to prevent unique constraint violations
   const ids = [...new Set(rawIds)];
@@ -195,7 +207,8 @@ function createUnblamePaginationManager(): PaginationManager<EmbedBuilder> {
     {
       pageSize: 1, // Each page is one embed
       commandName: 'unblame',
-      customIdPrefix: 'unblame'
+      customIdPrefix: 'unblame',
+      ephemeral: false // Make responses public
     },
     {
       fetchData: async (page: number, pageSize: number, unblameData: UnblameData) => {
