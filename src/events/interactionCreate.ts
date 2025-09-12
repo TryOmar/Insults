@@ -4,6 +4,7 @@ import * as rank from '../commands/rank.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
 import * as unblame from '../commands/unblame.js';
+import * as archive from '../commands/archive.js';
 import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
@@ -43,6 +44,7 @@ export async function handleInteraction(interaction: Interaction) {
       live_rank: liveRank.execute,
       detail: detail.execute,
       unblame: unblame.execute,
+      archive: archive.execute,
       help: help.execute,
       history: history.execute,
       insults: insults.execute,

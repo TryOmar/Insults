@@ -42,7 +42,21 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       results.push({ kind: 'forbidden', id, reason });
       continue;
     }
-    await prisma.insult.delete({ where: { id } });
+    // Move to Archive first, then delete
+    await prisma.$transaction([
+      (prisma as any).archive.create({
+        data: {
+          guildId: found.guildId,
+          userId: found.userId,
+          blamerId: found.blamerId,
+          insult: found.insult,
+          note: found.note ?? null,
+          createdAt: new Date(found.createdAt),
+          unblamerId: invokerId,
+        }
+      }),
+      prisma.insult.delete({ where: { id } }),
+    ]);
     results.push({ kind: 'deleted', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
   }
 
