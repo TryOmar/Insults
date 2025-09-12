@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
+import { safeInteractionReply } from '../utils/interactionValidation.js';
 
 const PAGE_SIZE = 10;
 
@@ -24,7 +25,11 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    const success = await safeInteractionReply(interaction, { 
+      content: 'This command can only be used in a server.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
     return;
   }
 
@@ -37,11 +42,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       .join(' ');
     const wc = normalized.split(/\s+/).filter(Boolean).length;
     if (wc === 0) {
-      await interaction.reply({ content: 'Please enter an insult phrase.', flags: MessageFlags.Ephemeral });
+      const success = await safeInteractionReply(interaction, { 
+        content: 'Please enter an insult phrase.', 
+        flags: MessageFlags.Ephemeral 
+      });
+      if (!success) return;
       return;
     }
     if (wc > 3) {
-      await interaction.reply({ content: 'Insult phrase must be up to 3 words.', flags: MessageFlags.Ephemeral });
+      const success = await safeInteractionReply(interaction, { 
+        content: 'Insult phrase must be up to 3 words.', 
+        flags: MessageFlags.Ephemeral 
+      });
+      if (!success) return;
       return;
     }
     // Overwrite the raw input with normalized for exact DB match
@@ -71,7 +84,11 @@ async function showInsultsPreview(interaction: ChatInputCommandInteraction, guil
   });
 
   if (topInsults.length === 0) {
-    await interaction.reply({ content: 'No insults recorded yet.', flags: MessageFlags.Ephemeral });
+    const success = await safeInteractionReply(interaction, { 
+      content: 'No insults recorded yet.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
     return;
   }
 
@@ -100,7 +117,10 @@ async function showInsultsPreview(interaction: ChatInputCommandInteraction, guil
     .setFooter({ text: 'Use /insults <word> for details' })
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  const success = await safeInteractionReply(interaction, { 
+    embeds: [embed] 
+  });
+  if (!success) return;
 }
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
@@ -185,8 +205,6 @@ async function fetchWordPage(guildId: string, word: string, page: number, pageSi
   const rows = entries.map(e => [
     String(e.id),
     `@${username.get(e.userId) ?? e.userId}`,
-    `@${username.get(e.blamerId) ?? e.blamerId}`,
-    e.note ?? '—',
     '\u200E' + getShortTime(new Date(e.createdAt)),
   ]);
 
@@ -212,14 +230,12 @@ function buildInsultsEmbed(data: PaginationData<any> & {
   const { items, totalCount, currentPage, totalPages, metadata, word } = data;
   
   if (scope.mode === 'word') {
-    const headers = ['ID', 'User', 'Blamer', 'Note', 'When'];
+    const headers = ['ID', 'Insulter', 'When'];
     const config: TableConfig = {
       columns: [
         { maxWidth: 4 },   // ID
-        { maxWidth: 6 },   // User
-        { maxWidth: 6 },   // Blamer
-        { maxWidth: 20 },   // Note
-        { maxWidth: 8 }     // When
+        { maxWidth: 12 },  // Insulter
+        { maxWidth: 8 }    // When
       ],
       emptyMessage: 'No occurrences found for this insult'
     };
@@ -230,7 +246,8 @@ function buildInsultsEmbed(data: PaginationData<any> & {
       .addFields(
         { name: 'Total', value: String(metadata.total), inline: true },
         { name: 'Users', value: String(metadata.users), inline: true },
-        { name: 'Top Blamer', value: metadata.top, inline: true },
+        { name: 'Top Insulter', value: metadata.top, inline: true },
+        { name: '', value: '*Use `/detail <id>` for more info*', inline: false },
       )
       .setFooter({ text: `Page ${currentPage}/${totalPages}` })
       .setColor(0xDC143C) // Dark red color
