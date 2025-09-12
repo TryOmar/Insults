@@ -1,48 +1,21 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, userMention, MessageFlags } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, userMention, MessageFlags, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 
 const PAGE_SIZE = 10;
 
-function buildPaginationButtons(page: number, totalPages: number): ActionRowBuilder<ButtonBuilder> {
-  const row = new ActionRowBuilder<ButtonBuilder>();
-
-  const firstButton = new ButtonBuilder()
-    .setCustomId(`rank:first:${page}:${totalPages}`)
-    .setLabel('⏮')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(page === 1);
-
-  const prevButton = new ButtonBuilder()
-    .setCustomId(`rank:prev:${page}:${totalPages}`)
-    .setLabel('◀')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(page === 1);
-
-  const nextButton = new ButtonBuilder()
-    .setCustomId(`rank:next:${page}:${totalPages}`)
-    .setLabel('▶')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(page === totalPages);
-
-  const lastButton = new ButtonBuilder()
-    .setCustomId(`rank:last:${page}:${totalPages}`)
-    .setLabel('⏭')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(page === totalPages);
-
-  row.addComponents(firstButton, prevButton, nextButton, lastButton);
-  return row;
-}
-
-async function fetchLeaderboardData(guildId: string, page: number): Promise<{ userId: string; points: number; username: string }[]> {
-  const rows = await prisma.insult.groupBy({
-    by: ['userId'],
-    where: { guildId },
-    _count: { userId: true },
-    orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
-    skip: (page - 1) * PAGE_SIZE,
-    take: PAGE_SIZE,
-  });
+async function fetchRankData(guildId: string, page: number, pageSize: number): Promise<PaginationData<{ userId: string; points: number; username: string }>> {
+  const [totalCount, rows] = await Promise.all([
+    prisma.insult.groupBy({ by: ['userId'], where: { guildId } }).then(rows => rows.length),
+    prisma.insult.groupBy({
+      by: ['userId'],
+      where: { guildId },
+      _count: { userId: true },
+      orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    })
+  ]);
 
   // Fetch usernames for all users
   const userIds = rows.map(row => row.userId);
@@ -53,16 +26,85 @@ async function fetchLeaderboardData(guildId: string, page: number): Promise<{ us
 
   const userMap = new Map(users.map(u => [u.id, u.username]));
 
-  return rows.map(row => ({
+  const items = rows.map(row => ({
     userId: row.userId,
     points: row._count.userId,
     username: userMap.get(row.userId) || 'Unknown User'
   }));
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    items,
+    totalCount,
+    currentPage: page,
+    totalPages
+  };
 }
 
 export const data = new SlashCommandBuilder()
   .setName('rank')
   .setDescription('Show the current insult leaderboard');
+
+function buildRankEmbed(data: PaginationData<{ userId: string; points: number; username: string }>): EmbedBuilder {
+  const { items: leaderboardData, currentPage, totalPages } = data;
+  
+  if (leaderboardData.length === 0) {
+    return new EmbedBuilder()
+      .setTitle('💀 Insults Leaderboard')
+      .setDescription('No insults recorded yet.')
+      .setColor(0xDC143C);
+  }
+
+  const rankList = leaderboardData.map((item, index) => {
+    const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
+    let rankText = '';
+    if (rank === 1) {
+      rankText = '**1st Place:** 💀';
+    } else if (rank === 2) {
+      rankText = '**2nd Place:** 👎';
+    } else if (rank === 3) {
+      rankText = '**3rd Place:** 😢';
+    } else {
+      rankText = `**${rank}.**`;
+    }
+    const pointsText = item.points === 1 ? 'Point' : 'Points';
+    return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
+  }).join('\n');
+
+  return new EmbedBuilder()
+    .setTitle('💀 Insults Leaderboard')
+    .setDescription(rankList)
+    .setColor(0xDC143C) // Dark red color for something bad
+    .setFooter({ text: `Page ${currentPage}/${totalPages}` })
+    .setTimestamp();
+}
+
+function createRankPaginationManager(): PaginationManager<{ userId: string; points: number; username: string }> {
+  return new PaginationManager(
+    {
+      pageSize: PAGE_SIZE,
+      commandName: 'rank',
+      customIdPrefix: 'rank'
+    },
+    {
+      fetchData: async (page: number, pageSize: number, guildId: string) => {
+        return await fetchRankData(guildId, page, pageSize);
+      },
+      buildEmbed: (data: PaginationData<{ userId: string; points: number; username: string }>) => {
+        return buildRankEmbed(data);
+      },
+      buildCustomId: (page: number) => {
+        return createStandardCustomId('rank', page);
+      },
+      parseCustomId: (customId: string) => {
+        const parsed = parseStandardCustomId(customId, 'rank');
+        if (!parsed) return null;
+        return { page: parsed.page };
+      }
+    }
+  );
+}
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
@@ -71,45 +113,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const page = 1; // Default to the first page
-  const totalCount = await prisma.insult.groupBy({ by: ['userId'], where: { guildId } }).then(rows => rows.length);
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-
-  const leaderboardData = await fetchLeaderboardData(guildId, page);
-  if (leaderboardData.length === 0) {
-    await interaction.reply('No insults recorded yet.');
-    return;
-  }
-
-  const rankList = leaderboardData.map((item, index) => {
-    const rank = (page - 1) * PAGE_SIZE + index + 1;
-    let rankText = '';
-    if (rank === 1) {
-      rankText = '**1st Place:** 💀';
-    } else if (rank === 2) {
-      rankText = '**2nd Place:** 👎';
-    } else if (rank === 3) {
-      rankText = '**3rd Place:** 😢';
-    } else {
-      rankText = `**${rank}.**`;
-    }
-    const pointsText = item.points === 1 ? 'Point' : 'Points';
-    return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
-  }).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setTitle('💀 Insults Leaderboard')
-    .setDescription(rankList)
-    .setColor(0xDC143C) // Dark red color for something bad
-    .setFooter({ text: `Page ${page}/${totalPages}` })
-    .setTimestamp();
-
-  const components = [buildPaginationButtons(page, totalPages)];
-
-  await interaction.reply({ embeds: [embed], components });
+  const paginationManager = createRankPaginationManager();
+  await paginationManager.handleInitialCommand(interaction, guildId);
 }
 
-export async function handleButton(customId: string, interaction: any) {
+export async function handleButton(customId: string, interaction: ButtonInteraction) {
   if (!customId.startsWith('rank:')) return;
   
   const guildId = interaction.guildId;
@@ -118,55 +126,39 @@ export async function handleButton(customId: string, interaction: any) {
     return;
   }
 
-  const parts = customId.split(':');
-  const action = parts[1]; // first, prev, next, last
-  const currentPage = parseInt(parts[2]);
-  const totalPages = parseInt(parts[3]);
+  const paginationManager = createRankPaginationManager();
   
-  let newPage = currentPage;
-  if (action === 'first') {
-    newPage = 1;
-  } else if (action === 'prev') {
-    newPage = Math.max(1, currentPage - 1);
-  } else if (action === 'next') {
-    newPage = Math.min(totalPages, currentPage + 1);
-  } else if (action === 'last') {
-    newPage = totalPages;
+  // Handle the button click manually to ensure correct arguments are passed
+  const [prefix, action, ...sessionParts] = customId.split(':');
+  const fullSessionId = sessionParts.join(':');
+  const sessionParsed = parseStandardCustomId(fullSessionId, 'rank');
+  if (!sessionParsed) return;
+  
+  let newPage = sessionParsed.page;
+  
+  switch (action) {
+    case 'first':
+      newPage = 1;
+      break;
+    case 'prev':
+      newPage = Math.max(1, sessionParsed.page - 1);
+      break;
+    case 'next':
+      // Get current data to determine total pages
+      const currentData = await fetchRankData(guildId, sessionParsed.page, PAGE_SIZE);
+      newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      break;
+    case 'last':
+      // Get current data to determine total pages
+      const lastData = await fetchRankData(guildId, sessionParsed.page, PAGE_SIZE);
+      newPage = lastData.totalPages;
+      break;
+    case 'refresh':
+      newPage = sessionParsed.page; // Stay on current page but refresh data
+      break;
+    default:
+      return;
   }
   
-  const totalCount = await prisma.insult.groupBy({ by: ['userId'], where: { guildId } }).then(rows => rows.length);
-  const calculatedTotalPages = Math.ceil(totalCount / PAGE_SIZE);
-
-  const leaderboardData = await fetchLeaderboardData(guildId, newPage);
-  if (leaderboardData.length === 0) {
-    await interaction.reply({ content: 'No insults recorded yet.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  const rankList = leaderboardData.map((item, index) => {
-    const rank = (newPage - 1) * PAGE_SIZE + index + 1;
-    let rankText = '';
-    if (rank === 1) {
-      rankText = '**1st Place:** 💀';
-    } else if (rank === 2) {
-      rankText = '**2nd Place:** 👎';
-    } else if (rank === 3) {
-      rankText = '**3rd Place:** 😢';
-    } else {
-      rankText = `**${rank}.**`;
-    }
-    const pointsText = item.points === 1 ? 'Point' : 'Points';
-    return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
-  }).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setTitle('💀 Insults Leaderboard')
-    .setDescription(rankList)
-    .setColor(0xDC143C) // Dark red color for something bad
-    .setFooter({ text: `Page ${newPage}/${calculatedTotalPages}` })
-    .setTimestamp();
-
-  const components = [buildPaginationButtons(newPage, calculatedTotalPages)];
-
-  await interaction.update({ embeds: [embed], components });
+  await paginationManager.respondWithPage(interaction, newPage, false, guildId);
 }

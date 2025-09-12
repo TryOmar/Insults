@@ -2,23 +2,11 @@ import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatIn
 import { prisma } from '../database/client.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
+import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
 
 const PAGE_SIZE = 10;
-
-function buildCustomId(scope: HistoryScope, page: number): string {
-  return `history:${scope.userId ?? 'all'}:${page}`;
-}
-
-function parseCustomId(customId: string): { userId: string | null; page: number } | null {
-  const m = customId.match(/^history:([^:]+):([0-9]+)$/);
-  if (!m) return null;
-  const raw = m[1];
-  const userId = raw === 'all' ? null : raw;
-  const page = parseInt(m[2], 10) || 1;
-  return { userId, page };
-}
 
 export const data = new SlashCommandBuilder()
   .setName('history')
@@ -34,10 +22,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   const userOpt = interaction.options.getUser('user', false);
   const scope: HistoryScope = { guildId, userId: userOpt?.id ?? null };
-  await respondWithHistory(interaction, scope, 1, true);
+  
+  const paginationManager = createHistoryPaginationManager();
+  await paginationManager.handleInitialCommand(interaction, scope);
 }
 
-async function fetchPage(scope: HistoryScope, page: number) {
+async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: number): Promise<PaginationData<any>> {
   const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
 
   const [totalCount, distinctUsers, distinctInsults, entries, targetUser] = await Promise.all([
@@ -47,8 +37,8 @@ async function fetchPage(scope: HistoryScope, page: number) {
     prisma.insult.findMany({
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     }),
     scope.userId ? prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : Promise.resolve(null),
   ]);
@@ -60,30 +50,62 @@ async function fetchPage(scope: HistoryScope, page: number) {
     : [];
   const blamerMap = new Map(blamers.map((u) => [u.id, u.username]));
 
+  // Fetch insulted user usernames
+  const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
+  const insultedUsers = uniqueInsultedIds.length
+    ? await prisma.user.findMany({ where: { id: { in: uniqueInsultedIds } }, select: { id: true, username: true } })
+    : [];
+  const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
+
   // Build distinct insults summary with counts, sorted by count desc then insult asc
   const insultGroups = distinctInsults
     .sort((a, b) => (b._count.insult - a._count.insult) || a.insult.localeCompare(b.insult))
     .map((g) => `${g.insult}(${g._count.insult})`);
 
-  return { totalCount, distinctUsers, entries, blamerMap, insultGroups, targetUsername: targetUser?.username ?? null };
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    items: entries,
+    totalCount,
+    currentPage: page,
+    totalPages,
+    // Additional data for the embed
+    distinctUsers,
+    blamerMap,
+    insultedUserMap,
+    insultGroups,
+    targetUsername: targetUser?.username ?? null
+  } as PaginationData<any> & {
+    distinctUsers: number;
+    blamerMap: Map<string, string>;
+    insultedUserMap: Map<string, string>;
+    insultGroups: string[];
+    targetUsername: string | null;
+  };
 }
 
-function buildEmbed(scope: HistoryScope, page: number, totalCount: number, distinctUsers: number, distinctInsults: string[], entries: any[], blamerMap: Map<string, string>, serverName: string | undefined, targetUsername: string | null) {
-  const headers = ['ID', 'Insult', 'Note', 'Blamer', 'When'];
+function buildHistoryEmbed(data: PaginationData<any> & {
+  distinctUsers: number;
+  blamerMap: Map<string, string>;
+  insultedUserMap: Map<string, string>;
+  insultGroups: string[];
+  targetUsername: string | null;
+}, scope: HistoryScope, serverName: string | undefined): EmbedBuilder {
+  const { items: entries, totalCount, currentPage, totalPages, distinctUsers, blamerMap, insultedUserMap, insultGroups, targetUsername } = data;
+  
+  const headers = scope.userId ? ['ID', 'Blamer', 'Insult'] : ['ID', 'Insulter', 'Insult'];
   const rows = entries.map((e) => [
     String(e.id),
+    scope.userId 
+      ? (blamerMap.get(e.blamerId) ?? 'Unknown') // Show blamer when filtering by user
+      : (insultedUserMap.get(e.userId) ?? e.userId), // Show insulter when showing all
     e.insult,
-    e.note ?? '—',
-    e.blamerId ? `${blamerMap.get(e.blamerId) ?? 'Unknown'}` : '—',
-    getShortTime(new Date(e.createdAt)),
   ]);
   const config: TableConfig = {
     columns: [
       { maxWidth: 4 },   // ID
+      { maxWidth: 8},  // Blamer/Insulter
       { maxWidth: 12 },  // Insult
-      { maxWidth: 8 },   // Note
-      { maxWidth: 10 },  // Blamer
-      { maxWidth: 8 }    // When
     ],
     emptyMessage: 'No history data to display'
   };
@@ -92,13 +114,14 @@ function buildEmbed(scope: HistoryScope, page: number, totalCount: number, disti
   const title = scope.userId
     ? `📜 History for ${targetUsername ? `${targetUsername}` : scope.userId}`
     : '📜 Server-wide History';
-  let distinctInsultsLine = distinctInsults.length ? distinctInsults.join(', ') : '—';
+  let distinctInsultsLine = insultGroups.length ? insultGroups.join(', ') : '—';
   if (distinctInsultsLine.length > 800) {
     distinctInsultsLine = distinctInsultsLine.slice(0, 800) + ' …';
   }
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setDescription(table)
+    .setFooter({ text: `Page ${currentPage}/${totalPages}` })
     .setTimestamp();
 
   const fields: { name: string; value: string; inline?: boolean }[] = [];
@@ -106,52 +129,112 @@ function buildEmbed(scope: HistoryScope, page: number, totalCount: number, disti
     fields.push({ name: 'User', value: `<@${scope.userId}> (${targetUsername ?? scope.userId})`, inline: true });
   }
   fields.push(
-    { name: 'Server', value: serverName ?? 'Unknown', inline: true },
     { name: 'Total Blames', value: String(totalCount), inline: true },
   );
   if (!scope.userId) {
     fields.push({ name: 'Total Users', value: String(distinctUsers), inline: true });
   }
-  fields.push({ name: 'Total Insults', value: String(distinctInsults.length), inline: true });
+  fields.push({ name: 'Total Insults', value: String(insultGroups.length), inline: true });
   fields.push({ name: 'Insults', value: distinctInsultsLine, inline: false });
   embed.addFields(fields);
   return embed;
 }
 
-function buildComponents(scope: HistoryScope, page: number, totalCount: number) {
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  if (totalPages <= 1) return [] as any;
-  const prevId = buildCustomId(scope, Math.max(1, page - 1));
-  const nextId = buildCustomId(scope, Math.min(totalPages, page + 1));
-  const prev = new ButtonBuilder().setCustomId(prevId).setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1);
-  const next = new ButtonBuilder().setCustomId(nextId).setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages);
-  const row = new ActionRowBuilder<ButtonBuilder>();
-  row.addComponents(prev);
-  if (nextId !== prevId) row.addComponents(next);
-  return [row];
-}
-
-export async function respondWithHistory(interaction: ChatInputCommandInteraction | ButtonInteraction, scope: HistoryScope, page: number, isInitial = false) {
-  const { totalCount, distinctUsers, entries, blamerMap, insultGroups, targetUsername } = await fetchPage(scope, page);
-  const embed = buildEmbed(scope, page, totalCount, distinctUsers, insultGroups, entries, blamerMap, interaction.guild?.name, targetUsername);
-  const components = buildComponents(scope, page, totalCount);
-
-  if (isInitial) {
-    await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
-  } else {
-    if ('update' in interaction) {
-      await interaction.update({ embeds: [embed], components });
-    } else if ('editReply' in interaction) {
-      await interaction.editReply({ embeds: [embed], components });
+function createHistoryPaginationManager(): PaginationManager<any, PaginationData<any> & {
+  distinctUsers: number;
+  blamerMap: Map<string, string>;
+  insultedUserMap: Map<string, string>;
+  insultGroups: string[];
+  targetUsername: string | null;
+}> {
+  return new PaginationManager(
+    {
+      pageSize: PAGE_SIZE,
+      commandName: 'history',
+      customIdPrefix: 'history'
+    },
+    {
+      fetchData: async (page: number, pageSize: number, scope: HistoryScope) => {
+        return await fetchHistoryData(scope, page, pageSize) as PaginationData<any> & {
+          distinctUsers: number;
+          blamerMap: Map<string, string>;
+          insultedUserMap: Map<string, string>;
+          insultGroups: string[];
+          targetUsername: string | null;
+        };
+      },
+      buildEmbed: (data: PaginationData<any> & {
+        distinctUsers: number;
+        blamerMap: Map<string, string>;
+        insultedUserMap: Map<string, string>;
+        insultGroups: string[];
+        targetUsername: string | null;
+      }, scope: HistoryScope, serverName: string | undefined) => {
+        return buildHistoryEmbed(data, scope, serverName);
+      },
+      buildCustomId: (page: number, scope: HistoryScope) => {
+        const userId = scope.userId ?? 'all';
+        return createStandardCustomId('history', page, userId);
+      },
+      parseCustomId: (customId: string) => {
+        const parsed = parseStandardCustomId(customId, 'history');
+        if (!parsed) return null;
+        const userId = parsed.params[0] === 'all' ? null : parsed.params[0];
+        return { page: parsed.page, userId };
+      }
     }
-  }
+  );
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
-  const parsed = parseCustomId(customId);
+  if (!customId.startsWith('history:')) return;
+  
+  // Extract the session ID from the custom ID
+  const parts = customId.split(':');
+  if (parts.length < 3) return;
+  
+  const sessionId = parts.slice(2).join(':'); // Rejoin in case there are colons in the session ID
+  const parsed = parseStandardCustomId(sessionId, 'history');
   if (!parsed) return;
-  const scope: HistoryScope = { guildId: interaction.guildId as string, userId: parsed.userId };
-  await respondWithHistory(interaction, scope, parsed.page, false);
+  
+  const userId = parsed.params[0] === 'all' ? null : parsed.params[0];
+  const scope: HistoryScope = { guildId: interaction.guildId as string, userId };
+  
+  const paginationManager = createHistoryPaginationManager();
+  
+  // Handle the button click manually to ensure correct arguments are passed
+  const [prefix, action, ...sessionParts] = customId.split(':');
+  const fullSessionId = sessionParts.join(':');
+  const sessionParsed = parseStandardCustomId(fullSessionId, 'history');
+  if (!sessionParsed) return;
+  
+  let newPage = sessionParsed.page;
+  
+  switch (action) {
+    case 'first':
+      newPage = 1;
+      break;
+    case 'prev':
+      newPage = Math.max(1, sessionParsed.page - 1);
+      break;
+    case 'next':
+      // Get current data to determine total pages
+      const currentData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
+      newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      break;
+    case 'last':
+      // Get current data to determine total pages
+      const lastData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
+      newPage = lastData.totalPages;
+      break;
+    case 'refresh':
+      newPage = sessionParsed.page; // Stay on current page but refresh data
+      break;
+    default:
+      return;
+  }
+  
+  await paginationManager.respondWithPage(interaction, newPage, false, scope, interaction.guild?.name);
 }
 
 

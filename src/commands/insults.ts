@@ -2,34 +2,13 @@ import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatIn
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
+import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 
 const PAGE_SIZE = 10;
 
 type ViewScope =
   | { mode: 'all'; guildId: string }
   | { mode: 'word'; guildId: string; word: string };
-
-function buildCustomId(scope: ViewScope, page: number): string {
-  if (scope.mode === 'all') return `insults:all:${page}`;
-  // store word safely using base64url to support non-ascii
-  const encoded = Buffer.from(scope.word, 'utf8').toString('base64url');
-  return `insults:word:${encoded}:${page}`;
-}
-
-function parseCustomId(customId: string): { scope: ViewScope; page: number } | null {
-  const mAll = customId.match(/^insults:all:([0-9]+)$/);
-  if (mAll) {
-    const page = parseInt(mAll[1], 10) || 1;
-    return { scope: { mode: 'all', guildId: '' }, page } as any;
-  }
-  const mWord = customId.match(/^insults:word:([A-Za-z0-9_-]+):([0-9]+)$/);
-  if (mWord) {
-    const word = Buffer.from(mWord[1], 'base64url').toString('utf8');
-    const page = parseInt(mWord[2], 10) || 1;
-    return { scope: { mode: 'word', guildId: '', word }, page } as any;
-  }
-  return null;
-}
 
 // Local generic table renderer with dynamic column sizing
 
@@ -76,7 +55,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   const scope: ViewScope = { mode: 'word', guildId, word: ((interaction as any)._normalizedWord ?? wordRaw) as string };
-  await respondWithInsults(interaction, scope, 1, true);
+  
+  const paginationManager = createInsultsPaginationManager();
+  await paginationManager.handleInitialCommand(interaction, scope);
 }
 
 async function showInsultsPreview(interaction: ChatInputCommandInteraction, guildId: string) {
@@ -122,7 +103,7 @@ async function showInsultsPreview(interaction: ChatInputCommandInteraction, guil
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
-async function fetchGeneralPage(guildId: string, page: number) {
+async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
   const [totalRecorded, groupedAll] = await Promise.all([
     prisma.insult.count({ where: { guildId } }),
     prisma.insult.groupBy({
@@ -130,8 +111,8 @@ async function fetchGeneralPage(guildId: string, page: number) {
       where: { guildId },
       _count: { insult: true },
       orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     }),
   ]);
 
@@ -152,23 +133,41 @@ async function fetchGeneralPage(guildId: string, page: number) {
   const users = userIds.length ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } }) : [];
   const username = new Map(users.map(u => [u.id, u.username]));
 
-  return { totalRecorded, distinctInsultsTotal, items: details.map(d => ({
+  const items = details.map(d => ({
     insult: d.insult,
     count: d.count,
     first: d.firstBlamerId ? `@${username.get(d.firstBlamerId) ?? d.firstBlamerId}` : '—',
     last: d.lastBlamerId ? `@${username.get(d.lastBlamerId) ?? d.lastBlamerId}` : '—',
     top: d.topBlamerId ? `@${username.get(d.topBlamerId) ?? d.topBlamerId}` : '—',
-  })),
-    totalDistinctOnPage: groupedAll.length };
+  }));
+
+  const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
+
+  return {
+    items,
+    totalCount: distinctInsultsTotal,
+    currentPage: page,
+    totalPages,
+    totalRecorded,
+    totalDistinctOnPage: groupedAll.length
+  } as any;
 }
 
-async function fetchWordPage(guildId: string, word: string, page: number) {
+async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number): Promise<PaginationData<any>> {
+  if (scope.mode === 'word') {
+    return await fetchWordPage(scope.guildId, scope.word, page, pageSize);
+  } else {
+    return await fetchGeneralPage(scope.guildId, page, pageSize);
+  }
+}
+
+async function fetchWordPage(guildId: string, word: string, page: number, pageSize: number): Promise<PaginationData<any>> {
   const where = { guildId, insult: word } as const;
   const [totalCount, distinctUsersCount, topBlamerGroup, entries] = await Promise.all([
     prisma.insult.count({ where }),
     prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
     prisma.insult.groupBy({ by: ['blamerId'], where, _count: { blamerId: true }, orderBy: [{ _count: { blamerId: 'desc' } }, { blamerId: 'asc' }], take: 1 }),
-    prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
+    prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
   ]);
 
   const userIds = new Set<string>();
@@ -191,72 +190,165 @@ async function fetchWordPage(guildId: string, word: string, page: number) {
     '\u200E' + getShortTime(new Date(e.createdAt)),
   ]);
 
-  return { metadata, rows, totalCount };
-}
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-function buildComponents(scope: ViewScope, page: number, totalCount: number) {
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  // If only one page, no pagination controls
-  if (totalPages <= 1) return [] as any;
-
-  const prevId = buildCustomId(scope, Math.max(1, page - 1));
-  const nextId = buildCustomId(scope, Math.min(totalPages, page + 1));
-
-  const prev = new ButtonBuilder().setCustomId(prevId).setEmoji('◀️').setStyle(ButtonStyle.Secondary).setDisabled(page <= 1);
-  const next = new ButtonBuilder().setCustomId(nextId).setEmoji('▶️').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages);
-
-  const row = new ActionRowBuilder<ButtonBuilder>();
-  row.addComponents(prev);
-  if (nextId !== prevId) row.addComponents(next);
-  return [row];
-}
-
-export async function respondWithInsults(interaction: ChatInputCommandInteraction | ButtonInteraction, scope: ViewScope, page: number, isInitial = false) {
-  const guildId = (interaction.guildId ?? (scope as any).guildId) as string;
-  const word = (scope as any).word;
-
-  // word-specific
-  const { metadata, rows, totalCount } = await fetchWordPage(guildId, word, page);
-  const headers = ['ID', 'User', 'Blamer', 'Note', 'When'];
-  const config: TableConfig = {
-    columns: [
-      { maxWidth: 4 },   // ID
-      { maxWidth: 6 },   // User
-      { maxWidth: 6 },   // Blamer
-      { maxWidth: 20 },   // Note
-      { maxWidth: 8 }     // When
-    ],
-    emptyMessage: 'No occurrences found for this insult'
+  return {
+    items: rows,
+    totalCount,
+    currentPage: page,
+    totalPages,
+    metadata,
+    word
+  } as PaginationData<any> & {
+    metadata: any;
+    word: string;
   };
-  const table = renderTable(headers, rows, config);
-  const embed = new EmbedBuilder()
-    .setTitle(`💀 Insult: "${word}"`)
-    .setDescription(table)
-    .addFields(
-      { name: 'Total', value: String(metadata.total), inline: true },
-      { name: 'Users', value: String(metadata.users), inline: true },
-      { name: 'Top Blamer', value: metadata.top, inline: true },
-    )
-    .setColor(0xDC143C) // Dark red color
-    .setTimestamp();
-  const components = buildComponents(scope, page, metadata.total);
+}
 
-  if (isInitial) {
-    await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
-  } else if ('update' in interaction) {
-    await (interaction as ButtonInteraction).update({ embeds: [embed], components });
-  } else if ('editReply' in interaction) {
-    await (interaction as any).editReply({ embeds: [embed], components });
+function buildInsultsEmbed(data: PaginationData<any> & {
+  metadata: any;
+  word: string;
+}, scope: ViewScope): EmbedBuilder {
+  const { items, totalCount, currentPage, totalPages, metadata, word } = data;
+  
+  if (scope.mode === 'word') {
+    const headers = ['ID', 'User', 'Blamer', 'Note', 'When'];
+    const config: TableConfig = {
+      columns: [
+        { maxWidth: 4 },   // ID
+        { maxWidth: 6 },   // User
+        { maxWidth: 6 },   // Blamer
+        { maxWidth: 20 },   // Note
+        { maxWidth: 8 }     // When
+      ],
+      emptyMessage: 'No occurrences found for this insult'
+    };
+    const table = renderTable(headers, items, config);
+    return new EmbedBuilder()
+      .setTitle(`💀 Insult: "${word}"`)
+      .setDescription(table)
+      .addFields(
+        { name: 'Total', value: String(metadata.total), inline: true },
+        { name: 'Users', value: String(metadata.users), inline: true },
+        { name: 'Top Blamer', value: metadata.top, inline: true },
+      )
+      .setFooter({ text: `Page ${currentPage}/${totalPages}` })
+      .setColor(0xDC143C) // Dark red color
+      .setTimestamp();
+  } else {
+    // General view - this would need to be implemented if needed
+    return new EmbedBuilder()
+      .setTitle('💀 Insults Overview')
+      .setDescription('General insults view not implemented yet')
+      .setColor(0xDC143C);
   }
 }
 
+function createInsultsPaginationManager(): PaginationManager<any, PaginationData<any> & {
+  metadata: any;
+  word: string;
+}> {
+  return new PaginationManager(
+    {
+      pageSize: PAGE_SIZE,
+      commandName: 'insults',
+      customIdPrefix: 'insults'
+    },
+    {
+      fetchData: async (page: number, pageSize: number, scope: ViewScope) => {
+        return await fetchInsultsData(scope, page, pageSize) as PaginationData<any> & {
+          metadata: any;
+          word: string;
+        };
+      },
+      buildEmbed: (data: PaginationData<any> & {
+        metadata: any;
+        word: string;
+      }, scope: ViewScope) => {
+        return buildInsultsEmbed(data, scope);
+      },
+      buildCustomId: (page: number, scope: ViewScope) => {
+        if (scope.mode === 'all') {
+          return createStandardCustomId('insults', page, 'all');
+        } else {
+          const encoded = Buffer.from(scope.word, 'utf8').toString('base64url');
+          return createStandardCustomId('insults', page, 'word', encoded);
+        }
+      },
+      parseCustomId: (customId: string) => {
+        const parsed = parseStandardCustomId(customId, 'insults');
+        if (!parsed) return null;
+        
+        if (parsed.params[0] === 'all') {
+          return { page: parsed.page, mode: 'all' };
+        } else if (parsed.params[0] === 'word' && parsed.params[1]) {
+          const word = Buffer.from(parsed.params[1], 'base64url').toString('utf8');
+          return { page: parsed.page, mode: 'word', word };
+        }
+        return null;
+      }
+    }
+  );
+}
+
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
-  const parsed = parseCustomId(customId);
+  if (!customId.startsWith('insults:')) return;
+  
+  // Extract the session ID from the custom ID
+  const parts = customId.split(':');
+  if (parts.length < 3) return;
+  
+  const sessionId = parts.slice(2).join(':'); // Rejoin in case there are colons in the session ID
+  const parsed = parseStandardCustomId(sessionId, 'insults');
   if (!parsed) return;
+  
   const guildId = interaction.guildId as string;
-  const { scope, page } = parsed;
-  const effectiveScope: ViewScope = scope.mode === 'all' ? { mode: 'all', guildId } : { mode: 'word', guildId, word: (scope as any).word } as any;
-  await respondWithInsults(interaction, effectiveScope, page, false);
+  let scope: ViewScope;
+  
+  if (parsed.params[0] === 'all') {
+    scope = { mode: 'all', guildId };
+  } else if (parsed.params[0] === 'word' && parsed.params[1]) {
+    const word = Buffer.from(parsed.params[1], 'base64url').toString('utf8');
+    scope = { mode: 'word', guildId, word };
+  } else {
+    return;
+  }
+  
+  const paginationManager = createInsultsPaginationManager();
+  
+  // Handle the button click manually to ensure correct arguments are passed
+  const [prefix, action, ...sessionParts] = customId.split(':');
+  const fullSessionId = sessionParts.join(':');
+  const sessionParsed = parseStandardCustomId(fullSessionId, 'insults');
+  if (!sessionParsed) return;
+  
+  let newPage = sessionParsed.page;
+  
+  switch (action) {
+    case 'first':
+      newPage = 1;
+      break;
+    case 'prev':
+      newPage = Math.max(1, sessionParsed.page - 1);
+      break;
+    case 'next':
+      // Get current data to determine total pages
+      const currentData = await fetchInsultsData(scope, sessionParsed.page, PAGE_SIZE);
+      newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      break;
+    case 'last':
+      // Get current data to determine total pages
+      const lastData = await fetchInsultsData(scope, sessionParsed.page, PAGE_SIZE);
+      newPage = lastData.totalPages;
+      break;
+    case 'refresh':
+      newPage = sessionParsed.page; // Stay on current page but refresh data
+      break;
+    default:
+      return;
+  }
+  
+  await paginationManager.respondWithPage(interaction, newPage, false, scope);
 }
 
 

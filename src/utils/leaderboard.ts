@@ -22,9 +22,9 @@ export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuild
 
   const config: TableConfig = {
     columns: [
-      { maxWidth: 3, align: 'right' },   // Rank
-      { maxWidth: 20, align: 'left' },   // User
-      { maxWidth: 6, align: 'right' }    // Count
+      { maxWidth: 3 },   // Rank
+      { maxWidth: 20 },   // User
+      { maxWidth: 6 }    // Count
     ],
     emptyMessage: 'No ranking data available'
   };
