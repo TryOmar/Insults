@@ -40,5 +40,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  await interaction.reply({ embeds: [result.data.publicEmbed] });
+  const sent = await interaction.reply({ embeds: [result.data.publicEmbed], fetchReply: true });
+  try {
+    // Add thumbs up/down reactions to the public message
+    if ('react' in sent && typeof sent.react === 'function') {
+      await sent.react('👍');
+      await sent.react('👎');
+    }
+  } catch {
+    // Ignore reaction failures (e.g., permissions)
+  }
 }
