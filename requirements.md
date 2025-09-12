@@ -14,7 +14,7 @@ The Insults Bot is a Discord bot that records, ranks, and analyzes insulting lan
   - Web UI or export features.
 
 ## 3. User Roles
-- Regular Member: Can submit `/blame` and view `/rank`.
+- Regular Member: Can submit `/blame`, view `/rank`, and view `/stats`.
 - Moderator/Admin: Same as member; moderation-specific permissions out of scope for MVP.
 
 ## 4. Slash Commands
@@ -55,6 +55,20 @@ The Insults Bot is a Discord bot that records, ranks, and analyzes insulting lan
   /rank
 ```
 
+### 4.3 `/stats`
+- Purpose: Show detailed recent insults for a specific user.
+- Parameters
+  - `user` (required, user mention)
+- Behavior
+  - Lists the last 10 insults for the user in the current guild.
+  - Shows `insult`, `note`, and `created_at`.
+- Success Response (embed)
+  - Title: "Insults for <user>"
+  - Table-like fields: `Insult | Note | Date`
+- Example
+```
+/stats @ameer
+```
 
 ## 5. Data Model
 
@@ -135,7 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_insults_guild_blamer ON insults (guild_id, blamer
 
 ## 11. File Structure (Guidance)
 - `src/`
-  - `commands/` → `blame.ts`, `rank.ts`
+  - `commands/` → `blame.ts`, `rank.ts`, `stats.ts`
   - `events/` → `ready.ts`, `interactionCreate.ts`
   - `database/` → connection, client, repositories
   - `utils/` → formatting, pagination, error helpers
@@ -154,11 +168,14 @@ CREATE INDEX IF NOT EXISTS idx_insults_guild_blamer ON insults (guild_id, blamer
   - Error: Human-readable reason (e.g., "Insult must be 1–140 characters")
 - `/rank`
   - Success: Embed list (top 10) with pagination controls
+- `/stats`
+  - Success: Embed showing recent 10 entries with `Insult | Note | Date`
 
 ## 14. Acceptance Criteria (MVP)
 - Can run the bot locally, register commands, and execute each command successfully.
 - `/blame` creates a record with correct metadata and validation.
 - `/rank` shows accurate aggregated counts scoped to the guild.
+- `/stats` lists recent insults for a user with correct ordering and fields.
 - Data persists across restarts.
 
 ## 15. Out of Scope (for now)

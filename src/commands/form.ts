@@ -15,14 +15,39 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       await interaction.reply({ content: 'Use this in a server.', flags: MessageFlags.Ephemeral });
       return;
     }
-    // Reply with a native User Select in the message, then open a text-input modal on selection
-    const select = new UserSelectMenuBuilder()
-      .setCustomId('form_user_select')
-      .setPlaceholder('Select a user')
-      .setMinValues(1)
-      .setMaxValues(1);
-    const row = new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(select);
-    await interaction.reply({ content: 'Pick a user to blame:', components: [row], flags: MessageFlags.Ephemeral });
+
+    // Create a simple modal with text inputs only
+    const modal = new ModalBuilder()
+      .setCustomId('form_modal_simple')
+      .setTitle('Blame Form');
+
+    const targetUser = new TextInputBuilder()
+      .setCustomId('target_user')
+      .setLabel('Target User ID')
+      .setPlaceholder('Enter the user ID to blame')
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
+
+    const insult = new TextInputBuilder()
+      .setCustomId('insult_text')
+      .setLabel('Insult')
+      .setPlaceholder('Enter the insult')
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
+
+    const note = new TextInputBuilder()
+      .setCustomId('note_text')
+      .setLabel('Optional Note')
+      .setPlaceholder('Add extra context if needed')
+      .setRequired(false)
+      .setStyle(TextInputStyle.Paragraph);
+
+    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(targetUser);
+    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(insult);
+    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(note);
+    modal.addComponents(row1, row2, row3);
+
+    await interaction.showModal(modal);
   } catch (err) {
     console.error('[FORM] /form failed:', err);
     try {
@@ -49,8 +74,8 @@ export async function handleButton(customId: string, interaction: any) {
 
     const insult = new TextInputBuilder()
       .setCustomId('insult_text')
-      .setLabel('Insult (letters/digits)')
-      .setPlaceholder('Single token with letters and numbers allowed. No spaces or symbols.')
+      .setLabel('Insult')
+      .setPlaceholder('Enter the insult')
       .setRequired(true)
       .setStyle(TextInputStyle.Short);
 
@@ -73,25 +98,42 @@ export async function handleButton(customId: string, interaction: any) {
 }
 
 export async function handleModal(customId: string, interaction: any) {
-  const match = customId.match(/^form_modal_(\d+)$/);
-  if (!match) return;
-  const targetId = match[1];
   const guildId = interaction.guildId as string;
 
   try {
-    const insult = interaction.fields.getTextInputValue('insult_text')?.trim();
-    const note = interaction.fields.getTextInputValue('note_text')?.trim() || null;
+    // Handle different modal types
+    let targetId: string | null = null;
+    if (customId === 'form_modal_simple') {
+      // For the simple modal, get target user ID from text input
+      targetId = interaction.fields?.getTextInputValue('target_user')?.trim?.();
+    } else if (customId === 'form_modal_v2') {
+      // Legacy v2 modal handling (should not be used anymore)
+      const comps = (interaction as any).components ?? [];
+      for (const row of comps) {
+        const component = row?.component ?? row?.components?.[0];
+        if (!component) continue;
+        const cid = component.custom_id ?? component.customId;
+        if (cid === 'form_user_select' || cid === 'user_selected') {
+          const values = component.values ?? [];
+          if (Array.isArray(values) && values.length > 0) {
+            targetId = values[0];
+          }
+        }
+      }
+    } else {
+      // Legacy modal with user ID in custom ID
+      const match = customId.match(/^form_modal_(\d+)$/);
+      if (match) targetId = match[1];
+    }
+
+    const insult = interaction.fields?.getTextInputValue('insult_text')?.trim?.();
+    const note = interaction.fields?.getTextInputValue('note_text')?.trim?.() || null;
     if (!insult) {
       await interaction.reply({ content: 'Insult is required.', flags: MessageFlags.Ephemeral });
       return;
     }
-    if (insult.length > 140) {
-      await interaction.reply({ content: 'Insult must be ≤ 140 characters.', flags: MessageFlags.Ephemeral });
-      return;
-    }
-    // Allow Unicode letters and digits; disallow spaces/symbols
-    if (!/^[\p{L}\p{Nd}]+$/u.test(insult)) {
-      await interaction.reply({ content: 'Insult must be a single token with only letters and numbers. No spaces or symbols.', flags: MessageFlags.Ephemeral });
+    if (!targetId) {
+      await interaction.reply({ content: 'Please provide a valid user ID.', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -102,7 +144,7 @@ export async function handleModal(customId: string, interaction: any) {
     }
     await prisma.user.upsert({ where: { id: interaction.user.id }, update: { username: interaction.user.username }, create: { id: interaction.user.id, username: interaction.user.username } });
 
-    const record = await prisma.insult.create({
+    await prisma.insult.create({
       data: {
         guildId,
         userId: targetId,
@@ -112,51 +154,7 @@ export async function handleModal(customId: string, interaction: any) {
       }
     });
 
-    // Aggregations for feedback
-    const totalBlames = await prisma.insult.count({ where: { guildId, userId: targetId } });
-    const grouped = await prisma.insult.groupBy({
-      by: ['insult'],
-      where: { guildId, userId: targetId },
-      _count: { insult: true },
-      orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-    });
-    const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
-    let distinctSummary = distinctPairs.join(', ');
-    if (distinctSummary.length === 0) distinctSummary = '—';
-    if (distinctSummary.length > 1000) {
-      const truncated: string[] = [];
-      let used = 0;
-      for (const part of distinctPairs) {
-        const addLen = (truncated.length === 0 ? 0 : 2) + part.length;
-        if (used + addLen > 1000) break;
-        truncated.push(part);
-        used += addLen;
-      }
-      const remaining = distinctPairs.length - truncated.length;
-      distinctSummary = remaining > 0 ? `${truncated.join(', ')} … (+${remaining} more)` : truncated.join(', ');
-    }
-
-    await interaction.reply({ content: `Blame recorded via form. Total blames: ${totalBlames}. Distinct insults (latest up to 10): ${distinctSummary}`, flags: MessageFlags.Ephemeral });
-
-    // Attempt to DM the insulted user with details
-    try {
-      const dmUser = await interaction.client.users.fetch(targetId);
-      const dmEmbed = {
-        title: 'You were blamed',
-        fields: [
-          { name: 'Server', value: interaction.guild?.name ?? 'Unknown', inline: true },
-          { name: 'By', value: `<@${interaction.user.id}>`, inline: true },
-          { name: 'Insult', value: insult, inline: false },
-          { name: 'Note', value: note ?? '—', inline: false },
-          { name: 'Total Blames', value: String(totalBlames), inline: true },
-          { name: 'Total Insults', value: distinctSummary, inline: false },
-        ],
-        timestamp: new Date(record.createdAt).toISOString(),
-      } as any;
-      await dmUser.send({ embeds: [dmEmbed] });
-    } catch {
-      // User may have DMs closed; ignore silently
-    }
+    await interaction.reply({ content: 'Blame recorded via form.', flags: MessageFlags.Ephemeral });
   } catch (err) {
     console.error('[FORM] saving modal submission failed:', err);
     try { await interaction.reply({ content: 'Could not save your form submission.', flags: MessageFlags.Ephemeral }); } catch {}

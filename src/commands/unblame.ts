@@ -21,7 +21,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const member = await interaction.guild?.members.fetch(invokerId).catch(() => null);
   const isAdmin = member?.permissions.has(PermissionFlagsBits.Administrator) ?? false;
 
-  if (record.blamerId !== invokerId && !isAdmin) {
+  if (record.userId !== invokerId && !isAdmin) {
     await interaction.reply({ content: 'You can only delete your own blames unless you are an admin.', flags: MessageFlags.Ephemeral });
     return;
   }

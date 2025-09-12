@@ -1,13 +1,14 @@
 import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction } from 'discord.js';
 import * as blame from '../commands/blame.js';
 import * as rank from '../commands/rank.js';
-import * as history from '../commands/history.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
-import * as insults from '../commands/insults.js';
 import * as unblame from '../commands/unblame.js';
 import * as form from '../commands/form.js';
 import * as help from '../commands/help.js';
+import * as history from '../commands/history.js';
+import * as insults from '../commands/insults.js';
+import * as setup from '../commands/setup.js';
 
 async function fetchChannelMessage(interaction: Interaction, channelId: string, messageId: string) {
   try {
@@ -39,13 +40,14 @@ export async function handleInteraction(interaction: Interaction) {
     const map: Record<string, (i: any) => Promise<void>> = {
       blame: blame.execute,
       rank: rank.execute,
-      history: history.execute,
       live_rank: liveRank.execute,
       detail: detail.execute,
       unblame: unblame.execute,
       form: form.execute,
-      insults: insults.execute,
       help: help.execute,
+      history: history.execute,
+      insults: insults.execute,
+      setup: setup.execute,
     };
 
     const handler = map[interaction.commandName];
@@ -58,25 +60,12 @@ export async function handleInteraction(interaction: Interaction) {
     return;
   }
 
-  // Button -> open modal or paginate history
+  // Button -> open modal
   if (interaction.isButton()) {
     const button = interaction as ButtonInteraction;
     const id = button.customId;
     if (id.startsWith('form_user_')) {
       await form.handleButton(id, button);
-      return;
-    }
-    if (id.startsWith('history:')) {
-      await history.handleButton(id, button);
-    }
-    if (id.startsWith('insults:')) {
-      await insults.handleButton(id, button);
-    }
-    if (id.startsWith('rank:')) {
-      await rank.handleButton(id, button);
-    }
-    if (id.startsWith('help:')) {
-      await help.handleButton(id, button);
     }
     return;
   }
