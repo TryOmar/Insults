@@ -136,6 +136,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   }
   fields.push({ name: 'Total Insults', value: String(insultGroups.length), inline: true });
   fields.push({ name: 'Insults', value: distinctInsultsLine, inline: false });
+  fields.push({ name: '', value: '*Use `/detail <id>` for more info*', inline: false });
   embed.addFields(fields);
   return embed;
 }

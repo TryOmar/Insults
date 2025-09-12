@@ -53,63 +53,58 @@ export function buildBlameEmbed(type: BlameEmbedType, options: {
 
   const embed = new EmbedBuilder();
 
-  // Invisible spacer field for 2-per-line layout
-const sep = { name: '\u200B', value: '\u200B', inline: true } as const;
-
-if (type === 'public') {
-  embed.setTitle('Blame recorded')
-       .setColor(0x00B894)
-       .setFooter({ text: 'Blame created' });
-} else {
-  embed.setTitle(`You were blamed for saying: ${insult}`);
-    embed.setColor(0xDC143C) // dark red color
-       .setFooter({ text: `Reported on ${guildName ?? 'Unknown'}` });
-}
-
-// Row 1: Server | Blame ID
-embed.addFields(
-  { name: '**Server**', value: guildName ?? 'Unknown', inline: true },
-  { name: '**Blame ID**', value: recordId, inline: true },
-  sep
-);
-
-// Row 2: Insulter | Blamer (clickable mentions)
-embed.addFields(
-  { name: '**Insulter**', value: userMention(targetId), inline: true },
-  { name: '**Blamer**', value: userMention(blamerId), inline: true },
-  sep
-);
-
-// Row 3: Insult | Frequency (server-wide)
-const safeNote = note && note.length > 0 ? note : '—';
-const toSpoiler = (v: string) => (v === '—' ? v : `||${v}||`);
-const wrap = (v: string) => (type === 'dm' ? v : toSpoiler(v));
-
-
-embed.addFields(
-  { name: '**Insult**', value: wrap(insult), inline: true },
-  { name: '**Frequency (server-wide)**', value: String(insultCount), inline: true },
-  sep
-);
-
-// Row 4: Note
-embed.addFields(
-  { name: '**Note**', value: wrap(safeNote), inline: false },
-);
-
-const usernameLabel = targetUsername ? `@${targetUsername}` : 'user';
-
-// Row 5: Blames against | Insults from
-embed.addFields(
-  { name: `**Blames against ${usernameLabel}**`, value: String(totalBlames), inline: false },
-  { name: `**Insults from ${usernameLabel}**`, value: wrap(distinctSummary), inline: false },
-);
-
-
-
-embed.setTimestamp(new Date(createdAt));
-
-return embed;
+  if (type === 'public') {
+    embed.setTitle('Blame recorded')
+         .setColor(0x00B894)
+         .setFooter({ text: 'Blame created' });
+  } else {
+    embed.setTitle(`You were blamed for saying: ${insult}`)
+         .setColor(0xDC143C) // dark red color
+         .setFooter({ text: `Reported on ${guildName ?? 'Unknown'}` });
+  }
+  
+  // Row 1: Server | Blame ID
+  embed.addFields(
+    { name: '**Server**', value: guildName ?? 'Unknown', inline: true },
+    { name: '**Blame ID**', value: recordId, inline: true }
+  );
+  
+  // Row 2: Insulter
+  embed.addFields(
+    { name: '**Insulter**', value: userMention(targetId), inline: false }
+  );
+  
+  // Row 3: Insult | Frequency (server-wide)
+  const safeNote = note && note.length > 0 ? note : '—';
+  const toSpoiler = (v: string) => (v === '—' ? v : `||${v}||`);
+  const wrap = (v: string) => (type === 'dm' ? v : toSpoiler(v));
+  
+  embed.addFields(
+    { name: '**Insult**', value: wrap(insult), inline: true },
+    { name: '**Frequency (server-wide)**', value: String(insultCount), inline: true }
+  );
+  
+  // Row 4: Note
+  embed.addFields(
+    { name: '**Note**', value: wrap(safeNote), inline: false }
+  );
+  
+  // Row 5: Blamer
+  embed.addFields(
+    { name: '**Blamer**', value: userMention(blamerId), inline: false }
+  );
+  
+  const usernameLabel = targetUsername ? `@${targetUsername}` : 'user';
+  
+  // Row 6: Blames against | Insults from
+  embed.addFields(
+    { name: `**Blames against ${usernameLabel}**`, value: String(totalBlames), inline: false },
+    { name: `**Insults from ${usernameLabel}**`, value: wrap(distinctSummary), inline: false }
+  );
+  
+  embed.setTimestamp(new Date(createdAt));
+  
+  return embed;  
 }
 
 export async function blameUser(params: BlameParams): Promise<{ ok: true; data: BlameSuccess } | { ok: false; error: BlameError }> {
