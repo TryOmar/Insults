@@ -1,5 +1,6 @@
 import { EmbedBuilder, User, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 
 export interface BlameParams {
   guildId: string;
@@ -164,33 +165,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     _count: { insult: true },
     orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
   });
-  const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
-  let distinctSummary = '—';
-  if (distinctPairs.length > 0) {
-    let buffer = '';
-    let used = 0;
-    let itemsOnLine = 0;
-    let added = 0;
-    for (let i = 0; i < distinctPairs.length; i++) {
-      const part = distinctPairs[i];
-      const sep = itemsOnLine === 0 ? '' : ', ';
-      const prospective = sep + part;
-      const prospectiveLen = prospective.length;
-      if (used + prospectiveLen > 1000) break;
-      buffer += prospective;
-      used += prospectiveLen;
-      itemsOnLine++;
-      added++;
-      if (itemsOnLine === 5 && i !== distinctPairs.length - 1) {
-        if (used + 1 > 1000) break; // for '\n'
-        buffer += '\n';
-        used += 1;
-        itemsOnLine = 0;
-      }
-    }
-    const remaining = distinctPairs.length - added;
-    distinctSummary = remaining > 0 ? `${buffer} … (+${remaining} more)` : buffer;
-  }
+  const distinctSummary = formatInsultFrequencyPairs(grouped);
 
   const publicEmbed = buildBlameEmbed('public', {
     createdAt: new Date(record.createdAt),
@@ -263,33 +238,7 @@ export async function buildBlameEmbedFromRecord(type: BlameEmbedType, record: Bl
     _count: { insult: true },
     orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
   });
-  const distinctPairs = grouped.map((g) => `${g.insult}(${g._count.insult})`);
-  let distinctSummary = '—';
-  if (distinctPairs.length > 0) {
-    let buffer = '';
-    let used = 0;
-    let itemsOnLine = 0;
-    let added = 0;
-    for (let i = 0; i < distinctPairs.length; i++) {
-      const part = distinctPairs[i];
-      const sep = itemsOnLine === 0 ? '' : ', ';
-      const prospective = sep + part;
-      const prospectiveLen = prospective.length;
-      if (used + prospectiveLen > 1000) break;
-      buffer += prospective;
-      used += prospectiveLen;
-      itemsOnLine++;
-      added++;
-      if (itemsOnLine === 5 && i !== distinctPairs.length - 1) {
-        if (used + 1 > 1000) break;
-        buffer += '\n';
-        used += 1;
-        itemsOnLine = 0;
-      }
-    }
-    const remaining = distinctPairs.length - added;
-    distinctSummary = remaining > 0 ? `${buffer} … (+${remaining} more)` : buffer;
-  }
+  const distinctSummary = formatInsultFrequencyPairs(grouped);
 
   return buildBlameEmbed(type, {
     createdAt,

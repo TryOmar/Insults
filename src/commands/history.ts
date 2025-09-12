@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
+import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
 
@@ -57,10 +58,9 @@ async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: num
     : [];
   const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
 
-  // Build distinct insults summary with counts, sorted by count desc then insult asc
-  const insultGroups = distinctInsults
-    .sort((a, b) => (b._count.insult - a._count.insult) || a.insult.localeCompare(b.insult))
-    .map((g) => `${g.insult}(${g._count.insult})`);
+  // Build distinct insults summary with counts using the formatter
+  const insultGroups = distinctInsults;
+  const formattedInsults = formatInsultFrequencyPairs(insultGroups);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -74,12 +74,14 @@ async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: num
     blamerMap,
     insultedUserMap,
     insultGroups,
+    formattedInsults,
     targetUsername: targetUser?.username ?? null
   } as PaginationData<any> & {
     distinctUsers: number;
     blamerMap: Map<string, string>;
     insultedUserMap: Map<string, string>;
-    insultGroups: string[];
+    insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+    formattedInsults: string;
     targetUsername: string | null;
   };
 }
@@ -88,10 +90,11 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   distinctUsers: number;
   blamerMap: Map<string, string>;
   insultedUserMap: Map<string, string>;
-  insultGroups: string[];
+  insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+  formattedInsults: string;
   targetUsername: string | null;
 }, scope: HistoryScope, serverName: string | undefined): EmbedBuilder {
-  const { items: entries, totalCount, currentPage, totalPages, distinctUsers, blamerMap, insultedUserMap, insultGroups, targetUsername } = data;
+  const { items: entries, totalCount, currentPage, totalPages, distinctUsers, blamerMap, insultedUserMap, insultGroups, formattedInsults, targetUsername } = data;
   
   const headers = scope.userId ? ['ID', 'Blamer', 'Insult'] : ['ID', 'Insulter', 'Insult'];
   const rows = entries.map((e) => [
@@ -114,10 +117,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   const title = scope.userId
     ? `📜 History for ${targetUsername ? `${targetUsername}` : scope.userId}`
     : '📜 Server-wide History';
-  let distinctInsultsLine = insultGroups.length ? insultGroups.join(', ') : '—';
-  if (distinctInsultsLine.length > 800) {
-    distinctInsultsLine = distinctInsultsLine.slice(0, 800) + ' …';
-  }
+  
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setDescription(table)
@@ -135,7 +135,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
     fields.push({ name: 'Total Users', value: String(distinctUsers), inline: true });
   }
   fields.push({ name: 'Total Insults', value: String(insultGroups.length), inline: true });
-  fields.push({ name: 'Insults', value: distinctInsultsLine, inline: false });
+  fields.push({ name: 'Insults Frequency', value: formattedInsults, inline: false });
   fields.push({ name: '', value: '*Use `/detail <id>` for more info*', inline: false });
   embed.addFields(fields);
   return embed;
@@ -145,7 +145,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
   distinctUsers: number;
   blamerMap: Map<string, string>;
   insultedUserMap: Map<string, string>;
-  insultGroups: string[];
+  insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+  formattedInsults: string;
   targetUsername: string | null;
 }> {
   return new PaginationManager(
@@ -161,7 +162,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
           distinctUsers: number;
           blamerMap: Map<string, string>;
           insultedUserMap: Map<string, string>;
-          insultGroups: string[];
+          insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+          formattedInsults: string;
           targetUsername: string | null;
         };
       },
@@ -169,7 +171,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
         distinctUsers: number;
         blamerMap: Map<string, string>;
         insultedUserMap: Map<string, string>;
-        insultGroups: string[];
+        insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+        formattedInsults: string;
         targetUsername: string | null;
       }, scope: HistoryScope, serverName: string | undefined) => {
         return buildHistoryEmbed(data, scope, serverName);
