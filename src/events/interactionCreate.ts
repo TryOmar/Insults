@@ -10,6 +10,7 @@ import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as radar from '../commands/radar.js';
+import { BlameButton } from '../utils/BlameButton.js';
 
 
 // Prevent double-processing of the same interaction (nodemon restarts, duplicate events, etc.)
@@ -77,6 +78,14 @@ export async function handleInteraction(interaction: Interaction) {
         await insults.handleButton(id, button);
       } else if (id.startsWith('archive:')) {
         await archive.handleButton(id, button);
+      } else if (id === 'blame:select-user') {
+        // Handle blame button click - show user select menu
+        const userSelectRow = BlameButton.createUserSelectMenu();
+        await button.reply({
+          content: 'Select a user to blame:',
+          components: [userSelectRow],
+          flags: MessageFlags.Ephemeral
+        });
       }
     } catch (error) {
       console.error(`Error handling button interaction ${id}:`, error);
@@ -109,11 +118,71 @@ export async function handleInteraction(interaction: Interaction) {
   }
 
 
+  // User Select Menu interactions
+  if (interaction.isUserSelectMenu()) {
+    const userSelect = interaction as UserSelectMenuInteraction;
+    try {
+      await BlameButton.handleUserSelect(userSelect);
+    } catch (error) {
+      console.error(`Error handling user select menu interaction ${userSelect.customId}:`, error);
+      
+      if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
+        console.log(`User select menu interaction ${userSelect.customId} is invalid, skipping error response`);
+        return;
+      }
+      
+      if (isInteractionExpired(userSelect)) {
+        console.log(`User select menu interaction ${userSelect.customId} has expired, skipping error response`);
+        return;
+      }
+      
+      if (!userSelect.replied && !userSelect.deferred) {
+        try {
+          await userSelect.reply({ 
+            content: 'An error occurred while processing your request.', 
+            flags: MessageFlags.Ephemeral 
+          });
+        } catch (replyError) {
+          console.log('Failed to reply to user select menu interaction:', replyError);
+        }
+      }
+    }
+    return;
+  }
+
   // Modal submit -> save
   if (interaction.isModalSubmit()) {
     const modal = interaction as ModalSubmitInteraction;
     const id = modal.customId;
-    // No setup modals to handle anymore
+    
+    try {
+      if (id.startsWith('blame:modal-submit:')) {
+        await BlameButton.handleModalSubmit(modal);
+      }
+    } catch (error) {
+      console.error(`Error handling modal submit interaction ${id}:`, error);
+      
+      if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
+        console.log(`Modal submit interaction ${id} is invalid, skipping error response`);
+        return;
+      }
+      
+      if (isInteractionExpired(modal)) {
+        console.log(`Modal submit interaction ${id} has expired, skipping error response`);
+        return;
+      }
+      
+      if (!modal.replied && !modal.deferred) {
+        try {
+          await modal.reply({ 
+            content: 'An error occurred while processing your request.', 
+            flags: MessageFlags.Ephemeral 
+          });
+        } catch (replyError) {
+          console.log('Failed to reply to modal submit interaction:', replyError);
+        }
+      }
+    }
     return;
   }
 }

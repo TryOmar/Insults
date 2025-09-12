@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, userMention, MessageFlags, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
+import { BlameButton } from '../utils/BlameButton.js';
 
 const PAGE_SIZE = 10;
 
@@ -80,8 +81,20 @@ function buildRankEmbed(data: PaginationData<{ userId: string; points: number; u
     .setTimestamp();
 }
 
-function createRankPaginationManager(): PaginationManager<{ userId: string; points: number; username: string }> {
-  return new PaginationManager(
+class RankPaginationManager extends PaginationManager<{ userId: string; points: number; username: string }> {
+  buildPaginationButtons(page: number, totalPages: number, ...args: any[]): ActionRowBuilder<ButtonBuilder>[] {
+    const rows = super.buildPaginationButtons(page, totalPages, ...args);
+    
+    // Add blame button as a separate row
+    const blameRow = new ActionRowBuilder<ButtonBuilder>();
+    blameRow.addComponents(BlameButton.createBlameButton());
+    
+    return [...rows, blameRow];
+  }
+}
+
+function createRankPaginationManager(): RankPaginationManager {
+  return new RankPaginationManager(
     {
       pageSize: PAGE_SIZE,
       commandName: 'rank',
