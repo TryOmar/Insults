@@ -210,7 +210,7 @@ function buildInsultsEmbed(data: PaginationData<any> & {
     const config: TableConfig = {
       columns: [
         { maxWidth: 25 },  // Insult
-        { maxWidth: 8 }    // Frequency
+        { maxWidth: 16 }    // Frequency
       ],
       emptyMessage: 'No insults recorded yet'
     };

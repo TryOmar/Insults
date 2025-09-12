@@ -107,7 +107,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   const config: TableConfig = {
     columns: [
       { maxWidth: 4 },   // ID
-      { maxWidth: 8},  // Blamer/Insulter
+      { maxWidth: 10 },  // Blamer/Insulter
       { maxWidth: 14 },  // Insult
     ],
     emptyMessage: 'No history data to display'
