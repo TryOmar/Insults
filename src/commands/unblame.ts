@@ -1,8 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
-import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
-import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 
 export const data = new SlashCommandBuilder()
@@ -11,6 +9,9 @@ export const data = new SlashCommandBuilder()
   .addStringOption(opt =>
     opt.setName('id').setDescription('Blame ID').setRequired(true)
   );
+
+type Page = { embeds: EmbedBuilder[] };
+const sessionStore = new Map<string, { pages: Page[]; currentPage: number }>();
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const raw = interaction.options.getString('id', true);
@@ -27,13 +28,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Defer the interaction since we know this will take time due to database operations
-  // We defer without ephemeral flag so the final response can be public
-  const success = await safeInteractionReply(interaction, { 
-    content: 'Processing unblame request...' 
-  });
-  if (!success) return;
-  
   // Remove duplicate IDs to prevent unique constraint violations
   const ids = [...new Set(rawIds)];
 
@@ -116,58 +110,21 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     if (selfIds) otherParts.push(`Self but not blamer: ${selfIds}`);
     if (otherIds) otherParts.push(`Not your blames: ${otherIds}`);
   }
-  // Create unblame result data for pagination
-  const unblameData = {
-    deleted,
-    notFound,
-    forbidden,
-    successIds,
-    otherParts
-  };
 
-  const paginationManager = createUnblamePaginationManager();
-  await paginationManager.handleInitialCommand(interaction, unblameData);
-}
-
-type UnblameResult = 
-  | { kind: 'deleted'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
-  | { kind: 'not_found'; id: number }
-  | { kind: 'forbidden'; id: number; reason: 'self_not_blamer' | 'not_owner' };
-
-type UnblameData = {
-  deleted: Extract<UnblameResult, { kind: 'deleted' }>[];
-  notFound: Extract<UnblameResult, { kind: 'not_found' }>[];
-  forbidden: Extract<UnblameResult, { kind: 'forbidden' }>[];
-  successIds: string;
-  otherParts: string[];
-};
-
-async function fetchUnblameData(unblameData: UnblameData, page: number, pageSize: number): Promise<PaginationData<EmbedBuilder>> {
-  const { deleted } = unblameData;
+  // Build pages: summary + detail pages for deleted items
+  const pages: Page[] = [];
   
-  // Page 1 is always the summary
-  if (page === 1) {
-  const summaryEmbed = new EmbedBuilder()
+  const summary = new EmbedBuilder()
     .setTitle('Unblame Summary')
     .addFields(
-        { name: 'Deleted', value: unblameData.successIds, inline: false },
-        ...(unblameData.otherParts.length ? [{ name: 'Other', value: unblameData.otherParts.join('\n'), inline: false }] : []) as any
+      { name: 'Deleted', value: successIds, inline: false },
+      ...(otherParts.length ? [{ name: 'Other', value: otherParts.join('\n'), inline: false }] : []) as any
     )
     .setColor(0x2ECC71)
     .setTimestamp();
-    
-    return {
-      items: [summaryEmbed],
-      totalCount: deleted.length + 1, // +1 for summary page
-      currentPage: 1,
-      totalPages: Math.max(1, deleted.length + 1)
-    };
-  }
-  
-  // Other pages are individual deleted items
-  const itemIndex = page - 2; // -2 because page 1 is summary, so page 2 is index 0
-  if (itemIndex >= 0 && itemIndex < deleted.length) {
-    const d = deleted[itemIndex];
+  pages.push({ embeds: [summary] });
+
+  for (const d of deleted) {
     const embed = new EmbedBuilder()
       .setTitle(`Deleted Blame #${d.id}`)
       .addFields(
@@ -180,75 +137,49 @@ async function fetchUnblameData(unblameData: UnblameData, page: number, pageSize
       )
       .setColor(0xE67E22)
       .setTimestamp(new Date(d.createdAt));
-    
-    return {
-      items: [embed],
-      totalCount: deleted.length + 1,
-      currentPage: page,
-      totalPages: Math.max(1, deleted.length + 1)
-    };
+    pages.push({ embeds: [embed] });
   }
-  
-  // Fallback
-  return {
-    items: [],
-    totalCount: 0,
-    currentPage: page,
-    totalPages: 1
+
+  const buildButtons = (page: number, total: number) => {
+    const row = new ActionRowBuilder<ButtonBuilder>();
+    row.addComponents(
+      new ButtonBuilder().setCustomId('unblame:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+      new ButtonBuilder().setCustomId('unblame:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+      new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
+      new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
+    );
+    return [row];
   };
-}
 
-function buildUnblameEmbed(data: PaginationData<EmbedBuilder>): EmbedBuilder {
-  return data.items[0] || new EmbedBuilder().setTitle('No data').setDescription('No data available');
-}
-
-function createUnblamePaginationManager(): PaginationManager<EmbedBuilder> {
-  return new PaginationManager(
-    {
-      pageSize: 1, // Each page is one embed
-      commandName: 'unblame',
-      customIdPrefix: 'unblame',
-      ephemeral: false // Make responses public
-    },
-    {
-      fetchData: async (page: number, pageSize: number, unblameData: UnblameData) => {
-        return await fetchUnblameData(unblameData, page, pageSize);
-      },
-      buildEmbed: (data: PaginationData<EmbedBuilder>) => {
-        return buildUnblameEmbed(data);
-      },
-      buildCustomId: (page: number) => {
-        return createStandardCustomId('unblame', page);
-      },
-      parseCustomId: (customId: string) => {
-        const parsed = parseStandardCustomId(customId, 'unblame');
-        if (!parsed) return null;
-        return { page: parsed.page };
-      }
-    }
-  );
+  const initialPage = 1;
+  await interaction.reply({ embeds: pages[initialPage - 1].embeds });
+  const sent = await interaction.fetchReply();
+  sessionStore.set(sent.id, { pages, currentPage: initialPage });
+  await interaction.editReply({ components: buildButtons(initialPage, pages.length) });
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
   if (!customId.startsWith('unblame:')) return;
-  
-  // For unblame, we need to store the unblame data in the session
-  // This is a simplified approach - in a real app you might want to store this in a database
+  const action = customId.split(':')[1];
   const messageId = interaction.message?.id;
   if (!messageId) return;
-  
-  // We'll need to reconstruct the unblame data from the message content
-  // This is a limitation of the current approach - ideally we'd store this data
-  // For now, we'll just handle the basic pagination without the refresh functionality
-  const parts = customId.split(':');
-  if (parts.length < 3) return;
-  
-  const sessionId = parts.slice(2).join(':'); // Rejoin in case there are colons in the session ID
-  const parsed = parseStandardCustomId(sessionId, 'unblame');
-  if (!parsed) return;
-  
-  // Since we can't easily reconstruct the unblame data, we'll just acknowledge the interaction
-  await interaction.deferUpdate();
+  const session = sessionStore.get(messageId);
+  if (!session) return;
+
+  const totalPages = session.pages.length;
+  let newPage = session.currentPage;
+  if (action === 'first') newPage = 1;
+  else if (action === 'prev') newPage = Math.max(1, session.currentPage - 1);
+  else if (action === 'next') newPage = Math.min(totalPages, session.currentPage + 1);
+  else if (action === 'last') newPage = totalPages;
+
+  session.currentPage = newPage;
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  row.addComponents(
+    new ButtonBuilder().setCustomId('unblame:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
+    new ButtonBuilder().setCustomId('unblame:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
+    new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
+    new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
+  );
+  await interaction.update({ embeds: session.pages[newPage - 1].embeds, components: [row] });
 }
-
-
