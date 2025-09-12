@@ -85,11 +85,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const rank = (page - 1) * PAGE_SIZE + index + 1;
     let rankText = '';
     if (rank === 1) {
-      rankText = '**1st Place:** 🏆';
+      rankText = '**1st Place:** 💀';
     } else if (rank === 2) {
-      rankText = '**2nd Place:** 🥈';
+      rankText = '**2nd Place:** 👎';
     } else if (rank === 3) {
-      rankText = '**3rd Place:** 🥉';
+      rankText = '**3rd Place:** 😢';
     } else {
       rankText = `**${rank}.**`;
     }
@@ -98,9 +98,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }).join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 Insults')
+    .setTitle('💀 Insults Leaderboard')
     .setDescription(rankList)
-    .setColor(0x5865F2) // Discord blurple color
+    .setColor(0xDC143C) // Dark red color for something bad
     .setFooter({ text: `Page ${page}/${totalPages}` })
     .setTimestamp();
 
@@ -147,22 +147,22 @@ export async function handleButton(customId: string, interaction: any) {
     const rank = (newPage - 1) * PAGE_SIZE + index + 1;
     let rankText = '';
     if (rank === 1) {
-      rankText = '**1st Place:** 🏆';
+      rankText = '**1st Place:** 💀';
     } else if (rank === 2) {
-      rankText = '**2nd Place:** 🥈';
+      rankText = '**2nd Place:** 👎';
     } else if (rank === 3) {
-      rankText = '**3rd Place:** 🥉';
+      rankText = '**3rd Place:** 😢';
     } else {
       rankText = `**${rank}.**`;
     }
     const pointsText = item.points === 1 ? 'Point' : 'Points';
-    return `${rankText} ${userMention(item.userId)} with ${item.points} ${pointsText}`;
+    return `${rankText} ${userMention(item.userId)} - ${item.points} ${pointsText}`;
   }).join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 Insults')
+    .setTitle('💀 Insults Leaderboard')
     .setDescription(rankList)
-    .setColor(0x5865F2) // Discord blurple color
+    .setColor(0xDC143C) // Dark red color for something bad
     .setFooter({ text: `Page ${newPage}/${calculatedTotalPages}` })
     .setTimestamp();
 
