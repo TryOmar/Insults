@@ -66,6 +66,8 @@ export async function handleInteraction(interaction: Interaction) {
     const id = button.customId;
     if (id.startsWith('setup:')) {
       await setup.handleButton(id, button);
+    } else if (id.startsWith('unblame:')) {
+      await unblame.handleButton(id, button);
     }
     return;
   }
