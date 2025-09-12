@@ -5,7 +5,6 @@ import { data as rank } from '../commands/rank.js';
 import { data as live_rank } from '../commands/live_rank.js';
 import { data as detail } from '../commands/detail.js';
 import { data as unblame } from '../commands/unblame.js';
-import { data as form } from '../commands/form.js';
 import { data as setup } from '../commands/setup.js';
 import { data as help } from '../commands/help.js';
 import { data as history } from '../commands/history.js';
@@ -14,7 +13,7 @@ import { data as insults } from '../commands/insults.js';
 export async function registerAllCommands() {
   const guildId = process.env.DEV_GUILD_ID;
   const rest = new REST({ version: '10' }).setToken(config.token);
-  const commandJson = [blame, rank, live_rank, detail, unblame, form, setup, help, history, insults].map((c) => c.toJSON());
+  const commandJson = [blame, rank, live_rank, detail, unblame, setup, help, history, insults].map((c) => c.toJSON());
 
   console.log('— Slash Command Registration —');
   console.log(`Client ID: ${config.clientId}`);

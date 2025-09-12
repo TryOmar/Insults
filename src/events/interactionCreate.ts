@@ -4,7 +4,6 @@ import * as rank from '../commands/rank.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
 import * as unblame from '../commands/unblame.js';
-import * as form from '../commands/form.js';
 import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
@@ -43,7 +42,6 @@ export async function handleInteraction(interaction: Interaction) {
       live_rank: liveRank.execute,
       detail: detail.execute,
       unblame: unblame.execute,
-      form: form.execute,
       help: help.execute,
       history: history.execute,
       insults: insults.execute,
@@ -64,38 +62,19 @@ export async function handleInteraction(interaction: Interaction) {
   if (interaction.isButton()) {
     const button = interaction as ButtonInteraction;
     const id = button.customId;
-    if (id.startsWith('form_user_')) {
-      await form.handleButton(id, button);
+    if (id.startsWith('setup:')) {
+      await setup.handleButton(id, button);
     }
     return;
   }
 
-  // String select -> open modal
-  if (interaction.isStringSelectMenu()) {
-    const sel = interaction as StringSelectMenuInteraction;
-    if (sel.customId === 'form_select_user') {
-      const targetId = sel.values[0];
-      await form.handleButton(`form_user_${targetId}`, sel);
-    }
-    return;
-  }
-
-  // User select -> open modal
-  if (interaction.isUserSelectMenu()) {
-    const sel = interaction as UserSelectMenuInteraction;
-    if (sel.customId === 'form_user_select') {
-      const targetId = sel.values[0];
-      await form.handleButton(`form_user_${targetId}`, sel);
-    }
-    return;
-  }
 
   // Modal submit -> save
   if (interaction.isModalSubmit()) {
     const modal = interaction as ModalSubmitInteraction;
     const id = modal.customId;
-    if (id.startsWith('form_modal_')) {
-      await form.handleModal(id, modal);
+    if (id === 'setup_form_modal') {
+      await setup.handleModal(id, modal);
     }
     return;
   }

@@ -28,3 +28,12 @@ model Insult {
   @@index([guildId, userId])
   @@index([guildId, blamerId])
 }
+
+model Setup {
+  guildId              String   @id
+  channelId            String
+  leaderboardMessageId String
+  createdAt            DateTime @default(now())
+
+  @@index([channelId])
+}
