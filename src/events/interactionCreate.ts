@@ -1,7 +1,6 @@
 import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction } from 'discord.js';
 import * as blame from '../commands/blame.js';
 import * as rank from '../commands/rank.js';
-// import * as stats from '../commands/stats.js';
 import * as history from '../commands/history.js';
 import * as liveRank from '../commands/live_rank.js';
 import * as detail from '../commands/detail.js';
@@ -39,7 +38,6 @@ export async function handleInteraction(interaction: Interaction) {
     const map: Record<string, (i: any) => Promise<void>> = {
       blame: blame.execute,
       rank: rank.execute,
-      // stats: stats.execute, // Deprecated in favor of /history
       history: history.execute,
       live_rank: liveRank.execute,
       detail: detail.execute,

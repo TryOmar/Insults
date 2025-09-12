@@ -2,7 +2,6 @@ import { REST, Routes } from 'discord.js';
 import { config } from '../config.js';
 import { data as blame } from '../commands/blame.js';
 import { data as rank } from '../commands/rank.js';
-// import { data as stats } from '../commands/stats.js';
 import { data as history } from '../commands/history.js';
 import { data as live_rank } from '../commands/live_rank.js';
 import { data as detail } from '../commands/detail.js';

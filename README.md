@@ -16,7 +16,6 @@ The main goal of this bot is to help people notice how often they insult others 
   - Options: `user` (required), `insult` (required), `note` (optional)
 - **/unblame**: Remove a recent insult you added (project-specific behavior)
 - **/rank**: Show leaderboard of top insulted users in the guild
-- **/stats**: Show recent insults for a specific user in the guild
 - **/detail**: Show details for a particular insult or user (project-specific behavior)
 - **/live_rank**: Manage a live-updating leaderboard message in a channel
 - **/form**: Two-step flow to record an insult via UI components

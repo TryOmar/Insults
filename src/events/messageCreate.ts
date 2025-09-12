@@ -11,7 +11,7 @@ export async function handleMessage(message: Message) {
       .setTitle('Insults Bot')
       .setDescription('Track and analyze playful insults in your server.')
       .addFields(
-        { name: 'Commands', value: '`/blame @user insult [note]`, `/rank`, `/stats @user`' },
+        { name: 'Commands', value: '`/blame @user insult [note]`, `/rank`' },
         { name: 'How it works', value: 'Records who blamed whom, when, with optional notes. Shows leaderboards and per-user histories.' },
       )
       .setFooter({ text: 'Tip: Use /rank to see the leaderboard.' })
