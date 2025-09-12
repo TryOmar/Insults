@@ -9,8 +9,8 @@ export function isInteractionExpired(interaction: Interaction): boolean {
   const interactionTime = interaction.createdTimestamp;
   const timeSinceCreation = now - interactionTime;
   
-  // Add a small buffer (500ms) to account for processing time
-  return timeSinceCreation > 3500; // 3.5 seconds
+  // Add a small buffer (1 second) to account for processing time and network delays
+  return timeSinceCreation > 4000; // 4 seconds
 }
 
 /**

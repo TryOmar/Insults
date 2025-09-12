@@ -32,7 +32,7 @@ export class BlameButton {
     return new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(selectMenu);
   }
 
-  static createBlameModal(): ModalBuilder {
+  static createBlameModal(targetUserId?: string): ModalBuilder {
     const insultInput = new TextInputBuilder()
       .setCustomId('blame:insult')
       .setLabel('Insult (1-3 words)')
@@ -52,8 +52,10 @@ export class BlameButton {
     const insultRow = new ActionRowBuilder<TextInputBuilder>().addComponents(insultInput);
     const noteRow = new ActionRowBuilder<TextInputBuilder>().addComponents(noteInput);
 
+    const customId = targetUserId ? `blame:modal-submit:${targetUserId}` : 'blame:modal-submit';
+
     return new ModalBuilder()
-      .setCustomId('blame:modal-submit')
+      .setCustomId(customId)
       .setTitle('Blame User')
       .addComponents(insultRow, noteRow);
   }
@@ -61,51 +63,109 @@ export class BlameButton {
   static async handleUserSelect(interaction: UserSelectMenuInteraction): Promise<void> {
     if (interaction.customId !== 'blame:user-selected') return;
 
-    const selectedUser = interaction.users.first();
-    if (!selectedUser) {
-      await interaction.reply({ 
-        content: 'No user selected. Please try again.', 
-        flags: MessageFlags.Ephemeral
-      });
+    // Check if already replied or deferred
+    if (interaction.replied || interaction.deferred) {
+      console.log(`User select interaction ${interaction.customId} already acknowledged, skipping`);
       return;
     }
 
+    const selectedUser = interaction.users.first();
+    if (!selectedUser) {
+      try {
+        await interaction.reply({ 
+          content: 'No user selected. Please try again.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        // Only log if it's not an invalid interaction error
+        if (!this.isInvalidInteractionError(error)) {
+          console.log('Failed to reply to user select interaction (no user selected):', error);
+        }
+      }
+      return;
+    }
 
     // Check if user is trying to blame a bot
     if (selectedUser.bot) {
-      await interaction.reply({ 
-        content: 'You cannot blame bot users!', 
-        flags: MessageFlags.Ephemeral
-      });
+      try {
+        await interaction.reply({ 
+          content: 'You cannot blame bot users!', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        // Only log if it's not an invalid interaction error
+        if (!this.isInvalidInteractionError(error)) {
+          console.log('Failed to reply to user select interaction (bot user):', error);
+        }
+      }
       return;
     }
 
-    const modal = this.createBlameModal();
-    
-    // Store the selected user ID in the modal custom ID for later retrieval
-    modal.setCustomId(`blame:modal-submit:${selectedUser.id}`);
+    try {
+      const modal = this.createBlameModal(selectedUser.id);
+      await interaction.showModal(modal);
+    } catch (error) {
+      // Only log if it's not an invalid interaction error
+      if (!this.isInvalidInteractionError(error)) {
+        console.error('Error showing modal for user select:', error);
+        try {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+              content: 'An error occurred while opening the blame form. Please try again.', 
+              flags: MessageFlags.Ephemeral
+            });
+          }
+        } catch (replyError) {
+          // Only log if it's not an invalid interaction error
+          if (!this.isInvalidInteractionError(replyError)) {
+            console.log('Failed to reply to user select interaction (modal error):', replyError);
+          }
+        }
+      }
+    }
+  }
 
-    await interaction.showModal(modal);
+  private static isInvalidInteractionError(error: any): boolean {
+    return error && typeof error === 'object' && 'code' in error && 
+           (error.code === 10062 || error.code === 40060); // Unknown interaction, Already acknowledged
   }
 
   static async handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
     if (!interaction.customId.startsWith('blame:modal-submit:')) return;
 
+    // Check if already replied or deferred
+    if (interaction.replied || interaction.deferred) {
+      console.log(`Modal submit interaction ${interaction.customId} already acknowledged, skipping`);
+      return;
+    }
+
     const targetUserId = interaction.customId.split(':')[2];
     if (!targetUserId) {
-      await interaction.reply({ 
-        content: 'Error: Could not identify target user. Please try again.', 
-        flags: MessageFlags.Ephemeral
-      });
+      try {
+        await interaction.reply({ 
+          content: 'Error: Could not identify target user. Please try again.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        if (!this.isInvalidInteractionError(error)) {
+          console.log('Failed to reply to modal submit (no target user):', error);
+        }
+      }
       return;
     }
 
     const guildId = interaction.guildId;
     if (!guildId) {
-      await interaction.reply({ 
-        content: 'This command can only be used in a server.', 
-        flags: MessageFlags.Ephemeral
-      });
+      try {
+        await interaction.reply({ 
+          content: 'This command can only be used in a server.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        if (!this.isInvalidInteractionError(error)) {
+          console.log('Failed to reply to modal submit (no guild):', error);
+        }
+      }
       return;
     }
 
@@ -115,10 +175,16 @@ export class BlameButton {
     // Get the target user from the guild
     const targetUser = await interaction.guild!.members.fetch(targetUserId).catch(() => null);
     if (!targetUser) {
-      await interaction.reply({ 
-        content: 'Error: Could not find the selected user. They may have left the server.', 
-        flags: MessageFlags.Ephemeral
-      });
+      try {
+        await interaction.reply({ 
+          content: 'Error: Could not find the selected user. They may have left the server.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        if (!this.isInvalidInteractionError(error)) {
+          console.log('Failed to reply to modal submit (user not found):', error);
+        }
+      }
       return;
     }
 
@@ -132,36 +198,62 @@ export class BlameButton {
       dmTarget: true
     };
 
-    // Defer the reply since blameUser might take some time
-    await interaction.deferReply({ ephemeral: true });
-
-    const result = await blameUser(blameParams);
-
-    if (!result.ok) {
-      await interaction.editReply({ 
-        content: `Error: ${result.error.message}` 
-      });
-      return;
-    }
-
-    // Send the public embed as a follow-up message (not a reply)
-    const followUp = await interaction.followUp({ 
-      embeds: [result.data.publicEmbed] 
-    });
-
-    // Add thumbs up/down reactions to the public message
     try {
-      await followUp.react('👍');
-      await followUp.react('👎');
-    } catch (reactionError) {
-      console.log('Failed to add reactions to blame message:', reactionError);
-    }
+      // Defer the reply since blameUser might take some time
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Log DM status
-    if (result.data.dmSent) {
-      console.log(`DM sent to ${targetUser.user.username} for blame`);
-    } else {
-      console.log(`Failed to send DM to ${targetUser.user.username} for blame`);
+      const result = await blameUser(blameParams);
+
+      if (!result.ok) {
+        await interaction.editReply({ 
+          content: `Error: ${result.error.message}` 
+        });
+        return;
+      }
+
+      // Send the public embed as a follow-up message (not a reply)
+      const followUp = await interaction.followUp({ 
+        embeds: [result.data.publicEmbed] 
+      });
+
+      // Add thumbs up/down reactions to the public message
+      // Wait a moment for the message to be fully processed
+      setTimeout(async () => {
+        try {
+          await followUp.react('👍');
+          await followUp.react('👎');
+        } catch (reactionError) {
+          console.log('Failed to add reactions to blame message:', reactionError);
+        }
+      }, 1000);
+
+      // Log DM status
+      if (result.data.dmSent) {
+        console.log(`DM sent to ${targetUser.user.username} for blame`);
+      } else {
+        console.log(`Failed to send DM to ${targetUser.user.username} for blame`);
+      }
+    } catch (error) {
+      // Only log if it's not an invalid interaction error
+      if (!this.isInvalidInteractionError(error)) {
+        console.error('Error in modal submit handling:', error);
+        try {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+              content: 'An error occurred while processing your blame. Please try again.', 
+              flags: MessageFlags.Ephemeral
+            });
+          } else if (interaction.deferred) {
+            await interaction.editReply({ 
+              content: 'An error occurred while processing your blame. Please try again.' 
+            });
+          }
+        } catch (replyError) {
+          if (!this.isInvalidInteractionError(replyError)) {
+            console.log('Failed to reply to modal submit (error handling):', replyError);
+          }
+        }
+      }
     }
   }
 }

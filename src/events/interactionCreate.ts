@@ -17,11 +17,20 @@ import { BlameButton } from '../utils/BlameButton.js';
 const processedInteractionIds = new Set<string>();
 
 export async function handleInteraction(interaction: Interaction) {
+  // Check if already processed first (fastest check)
   if (processedInteractionIds.has(interaction.id)) {
     console.log(`Skipping duplicate interaction: ${interaction.id}`);
     return;
   }
-  
+
+  // Check if already acknowledged (only for interactions that support it)
+  if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isModalSubmit() || interaction.isChatInputCommand()) {
+    if (interaction.replied || interaction.deferred) {
+      console.log(`Skipping already acknowledged interaction: ${interaction.id}`);
+      return;
+    }
+  }
+
   // Check if interaction has expired (Discord interactions expire after 3 seconds)
   if (isInteractionExpired(interaction)) {
     console.log(`Skipping expired interaction: ${interaction.id}`);
@@ -80,15 +89,42 @@ export async function handleInteraction(interaction: Interaction) {
         await archive.handleButton(id, button);
       } else if (id === 'blame:select-user') {
         // Handle blame button click - show user select menu
-        const userSelectRow = BlameButton.createUserSelectMenu();
-        await button.reply({
-          content: 'Select a user to blame:',
-          components: [userSelectRow],
-          flags: MessageFlags.Ephemeral
-        });
+        // Check if already replied or deferred
+        if (button.replied || button.deferred) {
+          console.log(`Button interaction ${id} already acknowledged, skipping`);
+          return;
+        }
+        
+        // Check if interaction has expired before attempting to respond
+        if (isInteractionExpired(button)) {
+          console.log(`Button interaction ${id} has expired, skipping`);
+          return;
+        }
+        
+        try {
+          // Defer the reply first to prevent interaction expiration
+          await button.deferReply({ flags: MessageFlags.Ephemeral });
+          
+          const userSelectRow = BlameButton.createUserSelectMenu();
+          await button.editReply({
+            content: 'Select a user to blame:',
+            components: [userSelectRow]
+          });
+        } catch (error) {
+          // If it's an invalid interaction error, just log and skip
+          if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
+            console.log(`Button interaction ${id} is invalid (expired or already acknowledged), skipping`);
+            return;
+          }
+          // Re-throw other errors to be handled by the outer catch
+          throw error;
+        }
       }
     } catch (error) {
-      console.error(`Error handling button interaction ${id}:`, error);
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling button interaction ${id}:`, error);
+      }
       
       // Check if this is a Discord API error indicating the interaction is invalid
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
@@ -110,7 +146,10 @@ export async function handleInteraction(interaction: Interaction) {
             flags: MessageFlags.Ephemeral 
           });
         } catch (replyError) {
-          console.log('Failed to reply to button interaction:', replyError);
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+            console.log('Failed to reply to button interaction:', replyError);
+          }
         }
       }
     }
@@ -124,7 +163,10 @@ export async function handleInteraction(interaction: Interaction) {
     try {
       await BlameButton.handleUserSelect(userSelect);
     } catch (error) {
-      console.error(`Error handling user select menu interaction ${userSelect.customId}:`, error);
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling user select menu interaction ${userSelect.customId}:`, error);
+      }
       
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
         console.log(`User select menu interaction ${userSelect.customId} is invalid, skipping error response`);
@@ -140,10 +182,13 @@ export async function handleInteraction(interaction: Interaction) {
         try {
           await userSelect.reply({ 
             content: 'An error occurred while processing your request.', 
-            flags: MessageFlags.Ephemeral 
+            flags: MessageFlags.Ephemeral
           });
         } catch (replyError) {
-          console.log('Failed to reply to user select menu interaction:', replyError);
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+            console.log('Failed to reply to user select menu interaction:', replyError);
+          }
         }
       }
     }
@@ -160,7 +205,10 @@ export async function handleInteraction(interaction: Interaction) {
         await BlameButton.handleModalSubmit(modal);
       }
     } catch (error) {
-      console.error(`Error handling modal submit interaction ${id}:`, error);
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling modal submit interaction ${id}:`, error);
+      }
       
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
         console.log(`Modal submit interaction ${id} is invalid, skipping error response`);
@@ -176,10 +224,13 @@ export async function handleInteraction(interaction: Interaction) {
         try {
           await modal.reply({ 
             content: 'An error occurred while processing your request.', 
-            flags: MessageFlags.Ephemeral 
+            flags: MessageFlags.Ephemeral
           });
         } catch (replyError) {
-          console.log('Failed to reply to modal submit interaction:', replyError);
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+            console.log('Failed to reply to modal submit interaction:', replyError);
+          }
         }
       }
     }
