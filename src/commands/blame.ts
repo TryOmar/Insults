@@ -29,13 +29,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Defer the interaction since we know this will take time due to database operations
-  // We defer without ephemeral flag so the final response can be public
-  const success = await safeInteractionReply(interaction, { 
-    content: 'Processing your blame...' 
-  });
-  if (!success) return;
-
   const target = interaction.options.getUser('user', true);
   const insultRaw = interaction.options.getString('insult', true);
   const noteRaw = interaction.options.getString('note', false);
@@ -52,18 +45,18 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   if (!result.ok) {
     const success = await safeInteractionReply(interaction, { 
-      content: result.error.message, 
+      content: result.error.message,
       flags: MessageFlags.Ephemeral 
-    }, false);
+    });
     if (!success) return;
     return;
   }
 
-  // Edit the deferred message with the actual result (public response)
-  const success2 = await safeInteractionReply(interaction, { 
+  // Send the public response directly (visible to everyone)
+  const success = await safeInteractionReply(interaction, { 
     embeds: [result.data.publicEmbed] 
-  }, false);
-  if (!success2) return;
+  });
+  if (!success) return;
 
   try {
     const sent = await interaction.fetchReply();
