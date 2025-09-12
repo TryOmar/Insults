@@ -7,6 +7,7 @@ import * as detail from '../commands/detail.js';
 import * as insults from '../commands/insults.js';
 import * as unblame from '../commands/unblame.js';
 import * as form from '../commands/form.js';
+import * as help from '../commands/help.js';
 
 async function fetchChannelMessage(interaction: Interaction, channelId: string, messageId: string) {
   try {
@@ -44,6 +45,7 @@ export async function handleInteraction(interaction: Interaction) {
       unblame: unblame.execute,
       form: form.execute,
       insults: insults.execute,
+      help: help.execute,
     };
 
     const handler = map[interaction.commandName];
@@ -72,6 +74,9 @@ export async function handleInteraction(interaction: Interaction) {
     }
     if (id.startsWith('rank:')) {
       await rank.handleButton(id, button);
+    }
+    if (id.startsWith('help:')) {
+      await help.handleButton(id, button);
     }
     return;
   }
