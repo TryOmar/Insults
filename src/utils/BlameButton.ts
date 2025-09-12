@@ -17,7 +17,7 @@ export class BlameButton {
   static createBlameButton(): ButtonBuilder {
     return new ButtonBuilder()
       .setCustomId('blame:select-user')
-      .setLabel('Blame')
+      //.setLabel('Blame')
       .setStyle(ButtonStyle.Danger)
       .setEmoji('💀');
   }
