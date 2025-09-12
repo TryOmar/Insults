@@ -19,22 +19,15 @@ export function renderTable(headers: string[], rows: string[][], config?: TableC
     return Math.min(contentWidth, maxAllowed);
   });
 
-  // Normalize Arabic-only fields
+  // Normalize all fields with Left-to-Right Mark for consistent alignment
   function normalizeCell(text: string): string {
-    if (!text) return '';
+    if (!text) return '\u200E';
 
-    // Detect pure Arabic text (basic Arabic unicode range)
-    const isArabic = /^[\u0600-\u06FF\s]+$/.test(text);
-
-    if (isArabic) {
-      // Force Left-to-Right rendering without adding visible junk
-      return '\u200E' + text.trim();
-    }
-
-    return text;
+    // Always add Left-to-Right Mark to ensure consistent text alignment
+    return '\u200E' + text.trim();
   }
 
-  // Pad + truncate text safely (Arabic + wide chars supported)
+  // Pad + truncate text safely with consistent Left-to-Right alignment
   const padText = (text: string, width: number): string => {
     let str = text ?? '';
 
@@ -49,15 +42,8 @@ export function renderTable(headers: string[], rows: string[][], config?: TableC
 
     const padSize = width - stringWidth(str);
 
-    // Detect if the text is Arabic
-    const isArabic = /^[\u0600-\u06FF\s]+$/.test(str);
-
-    // Apply padding based on text language
-    if (isArabic) {
-      return '\u200E' + str + ' '.repeat(padSize); // Left-to-right padding for Arabic
-    } else {
-      return str + ' '.repeat(padSize);
-    }
+    // Always use Left-to-Right Mark for consistent alignment
+    return '\u200E' + str + ' '.repeat(padSize);
   };
 
   // Borders
