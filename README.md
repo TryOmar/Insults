@@ -1,123 +1,158 @@
-## Insults Bot
+# Insults Bot
 
-A Discord bot that records, ranks, and analyzes insults in a server. Built with TypeScript, `discord.js` v14, and Prisma.
+A Discord bot that tracks, analyzes, and manages insult patterns in your server to promote healthier conversations through self-awareness.
 
-### Purpose
-The main goal of this bot is to help people notice how often they insult others and, as a result, reduce the number of insults they say. By tracking counts and surfacing leaderboards/stats, it promotes self-awareness and healthier conversations. In the future, optional punishments or consequences for top offenders may be introduced to further discourage insulting behavior.
+## Overview
 
-### Features
-- Persistent storage of insults with metadata (guild, insulted user, blamer, timestamps, optional note)
-- Slash commands for adding entries, leaderboards, and per-user stats
-- Live leaderboard message refresh support
-- Clean text table rendering for lists
+The Insults Bot helps server members become more aware of their communication patterns by tracking insults, providing leaderboards, and offering detailed analytics. The goal is to reduce negative communication through visibility and accountability.
 
-### Commands
-- **/blame**: Record an insult for a user
-  - Options: `user` (required), `insult` (required), `note` (optional)
-- **/unblame**: Remove a recent insult you added (project-specific behavior)
-- **/rank**: Show leaderboard of top insulted users in the guild
-- **/detail**: Show details for a particular insult or user (project-specific behavior)
-- **/radar**: Toggle automatic insult detection for the server
-- **/form**: Two-step flow to record an insult via UI components
-  - Step 1: Ephemeral message with a User Select (choose the insulted user)
-  - Step 2: Modal opens to capture `Insult` (required) and `Optional Note`
+## Features
 
-Important note about modals: Discord modals only support text inputs. Select menus (User/Role/Mentionable/String) cannot exist inside a modal. Therefore, the user selection occurs in the ephemeral message, and the modal collects text inputs only.
+- **Comprehensive Tracking**: Record insults with metadata (user, blamer, timestamp, notes)
+- **Analytics & Reporting**: View leaderboards, statistics, and detailed history
+- **Archive System**: Archive and restore blame records for better management
+- **Auto-Detection**: Optional radar system for automatic insult detection
+- **Interactive UI**: Modern slash commands with modals and select menus
 
-### Tech Stack
-- Node.js (TypeScript)
-- `discord.js` ^14.22.1
-- Prisma ORM with SQLite (dev by default)
+## Commands
+
+### Recording Commands
+- `/blame @user insult [note]` - Record an insult against a user
+- `/unblame <id>` - Delete a blame record by ID
+
+### Viewing Commands
+- `/rank` - Show the insult leaderboard
+- `/insults [word]` - Show insult statistics
+- `/history [@user]` - Show insult history
+- `/detail <id>` - Show details for a specific blame record
+
+### Management Commands
+- `/radar <enabled>` - Toggle automatic insult detection
+- `/archive [@user] [role]` - Show archived blame records
+- `/revert <id>` - Restore archived blames back into active records
+- `/help` - Show this help information
+
+## Tech Stack
+
+- **Runtime**: Node.js with TypeScript
+- **Discord API**: discord.js v14.22.1
+- **Database**: SQLite with Prisma ORM
+- **Build Tools**: TypeScript, tsx, nodemon
+
+## Quick Start
+
+### Prerequisites
+- Node.js (LTS recommended)
+- Discord Application with Bot Token
+
+### Installation
+
+1. **Clone and install dependencies**
+   ```bash
+   git clone <repository-url>
+   cd insults
+   npm install
+   ```
+
+2. **Configure environment**
+   Create a `.env` file:
+   ```env
+   DISCORD_TOKEN=your-bot-token
+   DISCORD_CLIENT_ID=your-client-id
+   DATABASE_URL=file:./prisma/dev.db
+   NODE_ENV=development
+   ```
+
+3. **Setup database**
+   ```bash
+   npx prisma generate
+   npx prisma db push
+   ```
+
+4. **Register commands**
+   ```bash
+   npx tsx src/utils/registerCommands.ts
+   ```
+
+5. **Start the bot**
+   ```bash
+   npm run dev
+   ```
+
+## Development
+
+### Available Scripts
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Build TypeScript to JavaScript
+- `npm start` - Run production build
+
+### Database Management
+- `npx prisma db push` - Sync schema with database
+- `npx prisma db push --force-reset` - Reset database (clears all data)
+- `npx prisma studio` - Open database GUI
 
 ### Project Structure
 ```
 src/
-  commands/
-  events/
-  database/
-  utils/
-  index.ts
+├── commands/          # Slash command handlers
+├── events/           # Discord event handlers
+├── database/         # Prisma client and types
+├── services/         # Business logic
+├── utils/            # Helper functions
+└── index.ts          # Application entry point
+
 prisma/
-  schema.prisma
+└── schema.prisma     # Database schema
 ```
 
-Key files:
-- `src/index.ts`: Client setup and event wiring
-- `src/events/interactionCreate.ts`: Central interaction router
-- `src/commands/*.ts`: Command handlers
-- `src/config.ts`: Loads environment variables
-- `src/database/client.ts`: Prisma client
-- `src/utils/*`: Helpers (e.g., command registration, table renderer)
+## Configuration
 
-### Database
-Prisma schema (SQLite by default): see `prisma/schema.prisma`.
+### Environment Variables
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_TOKEN` | Yes | Bot token from Discord Developer Portal |
+| `DISCORD_CLIENT_ID` | Yes | Application client ID |
+| `DATABASE_URL` | Yes | Database connection string |
+| `DEV_GUILD_ID` | No | Guild ID for development (registers commands locally) |
+| `NODE_ENV` | No | Environment mode (development/production) |
 
-Models:
-- `User`: `id`, `username`
-- `Insult`: `id`, `guildId`, `userId`, `blamerId`, `insult`, `note?`, `createdAt`
+### Discord Permissions
+Required bot permissions:
+- `bot` - Basic bot functionality
+- `applications.commands` - Slash command support
 
-Indexes:
-- `Insult(guildId, userId)` and `Insult(guildId, blamerId)`
+Required intents:
+- `Guilds` - Server information and slash commands
 
-### Configuration
-Environment variables (in `.env`):
-- `DISCORD_TOKEN` (required): Bot token
-- `DISCORD_CLIENT_ID` (required): Application client ID
-- `DATABASE_URL` (required): Prisma database URL (e.g., `file:./dev.db` for SQLite)
-- `NODE_ENV` (optional): `development` or `production` (defaults to `development`)
+## Database Schema
 
-Example `.env` for SQLite:
-```
-DISCORD_TOKEN=your-bot-token
-DISCORD_CLIENT_ID=your-client-id
-DATABASE_URL=file:./prisma/dev.db
-NODE_ENV=development
-```
+### Models
+- **User**: Discord user information (`id`, `username`)
+- **Insult**: Blame records (`id`, `guildId`, `userId`, `blamerId`, `insult`, `note`, `createdAt`)
+- **Archive**: Archived blame records with unblame tracking
+- **Setup**: Guild configuration (`guildId`, `radarEnabled`)
 
-### Scripts
-Defined in `package.json`:
-- `npm run build`: TypeScript build to `dist/`
-- `npm run dev`: Watch mode with `nodemon` + `tsx`, runs `src/index.ts`
-- `npm start`: Run compiled `dist/index.js`
+### Indexes
+- `Insult(guildId, userId)` - Fast user-specific queries
+- `Insult(guildId, blamerId)` - Fast blamer-specific queries
 
-### Setup & Development
-1) Install dependencies
-```
-npm install
-```
+## Troubleshooting
 
-2) Prepare the database
-```
-npx prisma generate
-npx prisma db push
-```
+### Common Issues
+- **Commands not appearing**: Re-run registration script; global commands take up to 1 hour
+- **Database errors**: Ensure `DATABASE_URL` is correct and run `npx prisma generate`
+- **Permission errors**: Verify bot has required permissions and intents
+- **Modal issues**: Remember that select menus cannot be embedded in modals
 
-3) Run locally
-```
-npm run dev
-```
+### Development Tips
+- Use `DEV_GUILD_ID` for faster command updates during development
+- Check logs for detailed error information
+- Use `npx prisma studio` to inspect database contents
 
-4) Register slash commands
-```
-npx tsx src/utils/registerCommands.ts
-```
+## License
 
-The registration script uses `DISCORD_CLIENT_ID` and (optionally) `DEV_GUILD_ID` to register commands. If `DEV_GUILD_ID` is set, commands register for that guild; otherwise, they register globally (and may take up to an hour to appear).
+ISC License - see `package.json` for details.
 
-### Permissions & Intents
-The bot uses the `Guilds` intent and message reads for some utilities. Ensure the application has the appropriate intents enabled in the Discord Developer Portal and that the bot is invited with the needed scopes (`bot`, `applications.commands`).
+---
 
-### Implementation Notes
-- The `/form` flow intentionally uses a User Select in an ephemeral message to choose the target user, then opens a modal for text inputs. This aligns with Discord API limitations (no select menus inside modals).
-- After actions that modify data (e.g., `/blame`, `/unblame`), the live leaderboard (if configured) is refreshed.
-
-### Troubleshooting
-- Commands not showing: re-run the registration script; for global commands, wait up to an hour. For rapid iteration, set `DEV_GUILD_ID` and register per-guild.
-- Auth errors: verify `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` in `.env`.
-- Prisma errors: ensure `DATABASE_URL` points to a valid location; run `npx prisma generate` and `npx prisma db push`.
-- Modal/select issues: remember selects cannot be embedded within modals; trigger the modal from a select interaction instead.
-
-### License
-ISC (see `package.json`).
-
-
+**Note**: This bot is designed to promote positive communication patterns through awareness and accountability. Use responsibly and in accordance with your server's community guidelines.
