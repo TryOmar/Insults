@@ -53,11 +53,18 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       results.push({ kind: 'not_found', id });
       continue;
     }
-    if (found.blamerId !== invokerId && !isAdmin) {
-      const reason = found.userId === invokerId ? 'self_not_blamer' : 'not_owner';
-      results.push({ kind: 'forbidden', id, reason });
+
+      // Reject only if invoker is NOT the blamer AND NOT the target AND NOT admin
+    if (found.blamerId !== invokerId && found.userId !== invokerId && !isAdmin) {
+      results.push({ kind: 'forbidden', id, reason: 'not_owner' });
       continue;
     }
+
+  // Everything else is allowed:
+  // - Invoker is blamer → can delete
+  // - Invoker is target → can delete themselves
+  // - Admin → can delete anything
+
     // Move to Archive first, then delete
     try {
     await prisma.$transaction([
