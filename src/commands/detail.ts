@@ -11,15 +11,26 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const id = interaction.options.getInteger('id', true);
+  const guildId = interaction.guildId;
   const guildName = interaction.guild?.name ?? 'Unknown guild';
 
+  if (!guildId) {
+    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
   // First check active insults
-  let record = await prisma.insult.findUnique({ where: { id } });
+  let record = await prisma.insult.findUnique({ where: { id, guildId } });
   let isArchived = false;
 
   // If not found in active insults, check archived insults by original insult ID
   if (!record) {
-    const archivedRecord = await (prisma as any).archive.findUnique({ where: { originalInsultId: id } });
+    const archivedRecord = await (prisma as any).archive.findUnique({ 
+      where: { 
+        originalInsultId: id,
+        guildId: guildId
+      } 
+    });
     if (archivedRecord) {
       // Convert archived record to match the expected format
       record = {
