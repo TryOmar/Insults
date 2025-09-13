@@ -70,14 +70,9 @@ export async function handleMessage(message: Message) {
       return true;
     });
 
-    // Get distinct bad words from existing insults table for this guild; fallback to global if none in guild
-    let groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
+    // Get distinct bad words from existing insults table for this guild only
+    const groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
     // console.log('[radar] distinct badwords count (guild)', groups.length);
-    if (!groups.length) {
-      const globalGroups = await prisma.insult.groupBy({ by: ['insult'] });
-      // console.log('[radar] distinct badwords count (global fallback)', globalGroups.length);
-      groups = globalGroups;
-    }
     if (!groups.length) return;
     const badwords = new Set(groups
       .map(g => normalizeForRadar(g.insult))
