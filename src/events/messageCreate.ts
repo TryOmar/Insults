@@ -11,8 +11,7 @@ export async function handleMessage(message: Message) {
   if (message.mentions.has(message.client.user, { ignoreEveryone: true, ignoreRoles: true })) {
     try {
       await message.reply({ 
-        content: 'Please use `/help` to see all available commands and learn how to use the bot.',
-        flags: MessageFlags.Ephemeral
+        content: 'Please use `/help` to see all available commands and learn how to use the bot.'
       });
     } catch {
       // Silently ignore errors (e.g., lack of permission)
