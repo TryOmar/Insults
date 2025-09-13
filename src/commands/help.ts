@@ -20,7 +20,7 @@ const COMMAND_INFO = {
     description: 'Delete a blame record by ID',
     usage: '`/unblame <id>`',
     userStory: '**User Story:** As a user, I want to remove blame records I created (or admins want to remove any) when they were mistakes or inappropriate.',
-    details: '**Parameters:**\n• `id` (required) - The blame record ID to delete (supports multiple IDs)\n\n**Permissions:**\n• You can delete your own blame records\n• You can delete records where you were the target\n• Admins can delete any record\n\n**Features:**\n• Moves deleted records to archive for audit trail\n• Supports multiple IDs in one command (separated by spaces or commas)\n• Shows detailed summary of what was deleted\n• Paginated results with navigation buttons\n• Handles already archived records gracefully'
+    details: '**Parameters:**\n• `id` (required) - The blame record ID to delete (supports multiple IDs)\n\n**Permissions:**\n• Anyone can unblame others\n• You cannot unblame yourself if you are the target but not the blamer\n• Admins can delete any record\n\n**Features:**\n• Moves deleted records to archive for audit trail\n• Supports multiple IDs in one command (separated by spaces or commas)\n• Shows detailed summary of what was deleted\n• Paginated results with navigation buttons\n• Handles already archived records gracefully'
   },
   rank: {
     name: 'rank',
@@ -83,22 +83,31 @@ const COMMAND_INFO = {
 // Function to create the main help embed
 function createMainHelpEmbed(): EmbedBuilder {
   return new EmbedBuilder()
-    .setDescription(`A comprehensive tracking system for monitoring and managing insult patterns in your Discord server
-📝 Recording Commands
-\`/blame @user insult [note]\` - Record an insult against a user
-\`/unblame <id>\` - Delete a blame record by ID
-📊 Viewing Commands
-\`/rank\` - Show the insult leaderboard
-\`/insults [word]\` - Show insult statistics
-\`/history [@user]\` - Show insult history
-\`/detail <id>\` - Show details for a specific blame record
-⚙️ Management Commands
-\`/radar <enabled>\` - Toggle automatic insult detection
-\`/archive [@user] [role]\` - Show archived blame records
-\`/revert <id>\` - Restore archived blames back into active records
-🔍 Get Detailed Help
-Use the dropdown below to select any command for detailed information, user stories, and examples.`)
-    .setColor(0x5865F2)
+    .setTitle('🗡️ Insults Bot - Command Help')
+    .setDescription('A comprehensive tracking system for monitoring and managing insult patterns in your Discord server')
+    .setColor(0xDC143C)
+    .addFields(
+      {
+        name: '📝 Recording Commands',
+        value: '`/blame @user insult [note]` - Record an insult against a user\n`/unblame <id>` - Delete a blame record by ID',
+        inline: false
+      },
+      {
+        name: '📊 Viewing Commands',
+        value: '`/rank` - Show the insult leaderboard\n`/insults [word]` - Show insult statistics\n`/history [@user]` - Show insult history\n`/detail <id>` - Show details for a specific blame record',
+        inline: false
+      },
+      {
+        name: '⚙️ Management Commands',
+        value: '`/radar <enabled>` - Toggle automatic insult detection\n`/archive [@user] [role]` - Show archived blame records\n`/revert <id>` - Restore archived blames back into active records',
+        inline: false
+      },
+      {
+        name: '🔍 Get Detailed Help',
+        value: 'Use the dropdown below to select any command for detailed information, user stories, and examples.',
+        inline: false
+      }
+    )
     .setTimestamp();
 }
 
@@ -139,14 +148,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId('help_command_select')
     .setPlaceholder('Select a command for detailed help...')
-    .addOptions(
-      Object.values(COMMAND_INFO).map(cmd => 
+    .addOptions([
+      new StringSelectMenuOptionBuilder()
+        .setLabel('🏠 Back to Main Help')
+        .setDescription('Return to the main help overview')
+        .setValue('main_help'),
+      ...Object.values(COMMAND_INFO).map(cmd => 
         new StringSelectMenuOptionBuilder()
           .setLabel(`/${cmd.name}`)
           .setDescription(cmd.description)
           .setValue(cmd.name)
       )
-    );
+    ]);
 
   const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
@@ -165,17 +178,27 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     });
 
     collector?.on('collect', async (selectInteraction) => {
-      const selectedCommand = selectInteraction.values[0];
-      const commandInfo = COMMAND_INFO[selectedCommand as keyof typeof COMMAND_INFO];
-
-      if (commandInfo) {
-        const detailEmbed = createCommandDetailEmbed(commandInfo);
-        
-        // Update the main message with the selected command details
+      const selectedValue = selectInteraction.values[0];
+      
+      if (selectedValue === 'main_help') {
+        // Show main help embed
         await selectInteraction.update({ 
-          embeds: [detailEmbed], 
+          embeds: [createMainHelpEmbed()], 
           components: [row] // Keep the dropdown for further selections
         });
+      } else {
+        // Show command detail
+        const commandInfo = COMMAND_INFO[selectedValue as keyof typeof COMMAND_INFO];
+        
+        if (commandInfo) {
+          const detailEmbed = createCommandDetailEmbed(commandInfo);
+          
+          // Update the main message with the selected command details
+          await selectInteraction.update({ 
+            embeds: [detailEmbed], 
+            components: [row] // Keep the dropdown for further selections
+          });
+        }
       }
     });
 

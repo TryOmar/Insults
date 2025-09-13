@@ -6,7 +6,7 @@ import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
-  .setDescription('Delete a blame record by ID (you must be the blamer or admin)')
+  .setDescription('Delete a blame record by ID (anyone can unblame others, but you cannot unblame yourself if you are the target but not the blamer)')
   .addStringOption(opt =>
     opt.setName('id').setDescription('Blame ID').setRequired(true)
   );
@@ -55,16 +55,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       continue;
     }
 
-      // Reject only if invoker is NOT the blamer AND NOT the target AND NOT admin
-    if (found.blamerId !== invokerId && found.userId !== invokerId && !isAdmin) {
-      results.push({ kind: 'forbidden', id, reason: 'not_owner' });
-      continue;
-    }
-
-  // Everything else is allowed:
-  // - Invoker is blamer → can delete
-  // - Invoker is target → can delete themselves
-  // - Admin → can delete anything
+      // Permission logic:
+      // - Anyone can unblame others
+      // - You cannot unblame yourself if you are the target but NOT the blamer
+      // - Admin can always delete anything
+      
+      if (found.userId === invokerId && found.blamerId !== invokerId) {
+        // Invoker is the target but NOT the blamer - they cannot unblame themselves
+        if (!isAdmin) {
+          results.push({ kind: 'forbidden', id, reason: 'self_not_blamer' });
+          continue;
+        }
+      }
 
     // Move to Archive first, then delete
     try {
