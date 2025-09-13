@@ -1,6 +1,7 @@
 import { EmbedBuilder, Message, MessageFlags, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
+import { guildSetupService } from '../services/guildSetup.js';
 
 export async function handleMessage(message: Message) {
   // Ignore bot and system messages
@@ -22,24 +23,17 @@ export async function handleMessage(message: Message) {
   try {
     const guildId = message.guildId;
     if (!guildId) return;
-    let setup = await prisma.setup.findUnique({ where: { guildId } });
-    if (!setup) {
-      // Auto-bootstrap radar ON if no row exists yet for this guild
-      try {
-        setup = await prisma.setup.create({
-          data: ({
-            guildId,
-            radarEnabled: true,
-          } as any),
-        });
-        // console.log('[radar] setup bootstrapped and enabled', { guildId });
-      } catch (e) {
-        // console.warn('[radar] failed to bootstrap setup; disabling radar for message', { guildId, error: e });
-        return;
-      }
+    
+    // Ensure guild setup exists and check if radar is enabled
+    const setupSuccess = await guildSetupService.ensureGuildSetup(guildId);
+    if (!setupSuccess) {
+      // console.warn('[radar] failed to bootstrap setup; disabling radar for message', { guildId });
+      return;
     }
-    // console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled: (setup as any).radarEnabled });
-    if (!(setup as any).radarEnabled) return;
+    
+    const radarEnabled = await guildSetupService.isRadarEnabled(guildId);
+    // console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled });
+    if (!radarEnabled) return;
 
     const content = message.content;
     if (!content || content.trim().length === 0) return;

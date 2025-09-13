@@ -8,7 +8,7 @@ import { registerAllCommands } from './utils/registerCommands.js';
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 client.once('clientReady', async () => {
-  onReady(client);
+  await onReady(client);
   try {
     await registerAllCommands();
   } catch (err) {
