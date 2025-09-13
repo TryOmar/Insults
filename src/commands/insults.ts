@@ -71,19 +71,20 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
-  const [totalRecorded, groupedAll] = await Promise.all([
-    prisma.insult.count({ where: { guildId } }),
-    prisma.insult.groupBy({
-      by: ['insult'],
-      where: { guildId },
-      _count: { insult: true },
-      orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
+  try {
+    const [totalRecorded, groupedAll] = await Promise.all([
+      prisma.insult.count({ where: { guildId } }),
+      prisma.insult.groupBy({
+        by: ['insult'],
+        where: { guildId },
+        _count: { insult: true },
+        orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
 
-  const distinctInsultsTotal = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length);
+    const distinctInsultsTotal = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length);
 
   // For each insult in page, compute first, last, and top blamer
   const details = await Promise.all(groupedAll.map(async (g) => {
@@ -110,14 +111,23 @@ async function fetchGeneralPage(guildId: string, page: number, pageSize: number)
 
   const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
 
-  return {
-    items,
-    totalCount: distinctInsultsTotal,
-    currentPage: page,
-    totalPages,
-    totalRecorded,
-    totalDistinctOnPage: groupedAll.length
-  } as any;
+    return {
+      items,
+      totalCount: distinctInsultsTotal,
+      currentPage: page,
+      totalPages,
+      totalRecorded,
+      totalDistinctOnPage: groupedAll.length
+    } as any;
+  } catch (error) {
+    // Check if it's a database connection error
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
+      console.error('Database connection error in fetchGeneralPage:', error);
+      throw new Error('Database connection failed. Please try again later.');
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number): Promise<PaginationData<any>> {
@@ -129,13 +139,14 @@ async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number
 }
 
 async function fetchWordPage(guildId: string, word: string, page: number, pageSize: number): Promise<PaginationData<any>> {
-  const where = { guildId, insult: word } as const;
-  const [totalCount, distinctUsersCount, topInsulterGroup, entries] = await Promise.all([
-    prisma.insult.count({ where }),
-    prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
-    prisma.insult.groupBy({ by: ['userId'], where, _count: { userId: true }, orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }], take: 1 }),
-    prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
-  ]);
+  try {
+    const where = { guildId, insult: word } as const;
+    const [totalCount, distinctUsersCount, topInsulterGroup, entries] = await Promise.all([
+      prisma.insult.count({ where }),
+      prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
+      prisma.insult.groupBy({ by: ['userId'], where, _count: { userId: true }, orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }], take: 1 }),
+      prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
+    ]);
 
   const userIds = new Set<string>();
   if (topInsulterGroup[0]?.userId) userIds.add(topInsulterGroup[0].userId);
@@ -157,17 +168,26 @@ async function fetchWordPage(guildId: string, word: string, page: number, pageSi
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  return {
-    items: rows,
-    totalCount,
-    currentPage: page,
-    totalPages,
-    metadata,
-    word
-  } as PaginationData<any> & {
-    metadata: any;
-    word: string;
-  };
+    return {
+      items: rows,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      metadata,
+      word
+    } as PaginationData<any> & {
+      metadata: any;
+      word: string;
+    };
+  } catch (error) {
+    // Check if it's a database connection error
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
+      console.error('Database connection error in fetchWordPage:', error);
+      throw new Error('Database connection failed. Please try again later.');
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 function buildInsultsEmbed(data: PaginationData<any> & {

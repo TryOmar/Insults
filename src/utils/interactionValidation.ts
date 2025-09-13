@@ -24,7 +24,7 @@ export function isDiscordAPIError(error: any): boolean {
  * Checks if an error indicates the interaction is invalid (expired or already acknowledged)
  */
 export function isInteractionInvalidError(error: any): boolean {
-  const invalidCodes = [10062, 40060]; // Unknown interaction, Already acknowledged
+  const invalidCodes = [10062, 40060, 10008]; // Unknown interaction, Already acknowledged, Unknown Message
   return isDiscordAPIError(error) && invalidCodes.includes((error as any).code);
 }
 

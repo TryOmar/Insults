@@ -12,6 +12,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { blameUser, BlameParams } from '../services/blame.js';
+import { isDiscordAPIError, isInteractionInvalidError } from './interactionValidation.js';
 
 export class BlameButton {
   static createBlameButton(): ButtonBuilder {
@@ -78,7 +79,7 @@ export class BlameButton {
         });
       } catch (error) {
         // Only log if it's not an invalid interaction error
-        if (!this.isInvalidInteractionError(error)) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.log('Failed to reply to user select interaction (no user selected):', error);
         }
       }
@@ -94,7 +95,7 @@ export class BlameButton {
         });
       } catch (error) {
         // Only log if it's not an invalid interaction error
-        if (!this.isInvalidInteractionError(error)) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.log('Failed to reply to user select interaction (bot user):', error);
         }
       }
@@ -106,7 +107,7 @@ export class BlameButton {
       await interaction.showModal(modal);
     } catch (error) {
       // Only log if it's not an invalid interaction error
-      if (!this.isInvalidInteractionError(error)) {
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
         console.error('Error showing modal for user select:', error);
         try {
           if (!interaction.replied && !interaction.deferred) {
@@ -117,7 +118,7 @@ export class BlameButton {
           }
         } catch (replyError) {
           // Only log if it's not an invalid interaction error
-          if (!this.isInvalidInteractionError(replyError)) {
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
             console.log('Failed to reply to user select interaction (modal error):', replyError);
           }
         }
@@ -125,10 +126,6 @@ export class BlameButton {
     }
   }
 
-  private static isInvalidInteractionError(error: any): boolean {
-    return error && typeof error === 'object' && 'code' in error && 
-           (error.code === 10062 || error.code === 40060); // Unknown interaction, Already acknowledged
-  }
 
   static async handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
     if (!interaction.customId.startsWith('blame:modal-submit:')) return;
@@ -147,7 +144,7 @@ export class BlameButton {
           flags: MessageFlags.Ephemeral
         });
       } catch (error) {
-        if (!this.isInvalidInteractionError(error)) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.log('Failed to reply to modal submit (no target user):', error);
         }
       }
@@ -162,7 +159,7 @@ export class BlameButton {
           flags: MessageFlags.Ephemeral
         });
       } catch (error) {
-        if (!this.isInvalidInteractionError(error)) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.log('Failed to reply to modal submit (no guild):', error);
         }
       }
@@ -181,7 +178,7 @@ export class BlameButton {
           flags: MessageFlags.Ephemeral
         });
       } catch (error) {
-        if (!this.isInvalidInteractionError(error)) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.log('Failed to reply to modal submit (user not found):', error);
         }
       }
@@ -223,7 +220,12 @@ export class BlameButton {
           await followUp.react('👍');
           await followUp.react('👎');
         } catch (reactionError) {
-          console.log('Failed to add reactions to blame message:', reactionError);
+          // Check if it's a Discord API error indicating the message doesn't exist
+          if (isDiscordAPIError(reactionError) && (reactionError as any).code === 10008) {
+            console.log('Message was deleted before reactions could be added, skipping');
+          } else {
+            console.log('Failed to add reactions to blame message:', reactionError);
+          }
         }
       }, 1000);
 
@@ -235,7 +237,7 @@ export class BlameButton {
       }
     } catch (error) {
       // Only log if it's not an invalid interaction error
-      if (!this.isInvalidInteractionError(error)) {
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
         console.error('Error in modal submit handling:', error);
         try {
           if (!interaction.replied && !interaction.deferred) {
@@ -249,7 +251,7 @@ export class BlameButton {
             });
           }
         } catch (replyError) {
-          if (!this.isInvalidInteractionError(replyError)) {
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
             console.log('Failed to reply to modal submit (error handling):', replyError);
           }
         }
