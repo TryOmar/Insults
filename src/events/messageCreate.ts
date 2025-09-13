@@ -2,6 +2,7 @@ import { EmbedBuilder, Message, MessageFlags, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { guildSetupService } from '../services/guildSetup.js';
+import { checkCooldown, getCooldownMessage } from '../utils/cooldown.js';
 
 export async function handleMessage(message: Message) {
   // Ignore bot and system messages
@@ -20,9 +21,18 @@ export async function handleMessage(message: Message) {
   }
 
   // Handle DM messages
-  if (!message.guildId) {
-    // This is a DM message
+  if (!message.guildId || message.channel.type === 1) {
+    // This is a DM message (check both guildId and channel type for better compatibility)
     console.log('DM message received from:', message.author.username, 'Content:', message.content);
+    
+    // Check cooldown for DM messages
+    const cooldownResult = checkCooldown(message.author);
+    if (!cooldownResult.allowed) {
+      // Silently ignore DM messages during cooldown - no reply at all
+      console.log('DM ignored due to cooldown:', message.author.username, 'Reason:', cooldownResult.reason, 'Remaining:', cooldownResult.remaining + 'ms');
+      return; // Don't process further and don't reply
+    }
+    
     try {
       const embed = new EmbedBuilder()
         .setTitle('🗡️ Insults Bot')
@@ -38,12 +48,20 @@ export async function handleMessage(message: Message) {
             name: 'Get Started:',
             value: 'Use `/help` to see all available commands and learn how to use me!',
             inline: false
+          },
+          {
+            name: 'DM Commands:',
+            value: '• `/clear` - Clear bot messages in this DM\n• `/help` - View all available commands',
+            inline: false
           }
         )
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({ text: 'Tip: Most commands work in servers, but some are DM-only!' });
 
       await message.reply({ embeds: [embed] });
-    } catch {
+      console.log('DM response sent successfully to:', message.author.username);
+    } catch (error) {
+      console.error('Failed to send DM response to:', message.author.username, 'Error:', error);
       // Silently ignore errors (e.g., user has DMs disabled)
     }
     return; // Don't process radar for DM messages
