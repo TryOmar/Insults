@@ -73,6 +73,6 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 // Export with spam protection
-export const execute = withSpamProtection('detail', executeCommand);
+export const execute = withSpamProtection(executeCommand);
 
 

@@ -1,371 +1,282 @@
 import { User } from 'discord.js';
 
 // ============================================================================
-// CONFIGURATION - All spam prevention settings in one place
+// 🔧 ANTI-SPAM CONFIGURATION
 // ============================================================================
 
-/**
- * Base cooldown times in milliseconds (before progressive punishment)
- * These are the normal cooldowns for each command
- */
-export const BASE_COOLDOWNS = {
-  blame: 5000,     // 5 seconds - creates records
-  unblame: 3000,   // 3 seconds - modifies records
-  archive: 3000,   // 3 seconds - viewing command
-  revert: 5000,    // 5 seconds - modifies records
-  radar: 10000,    // 10 seconds - admin command
-  help: 2000,      // 2 seconds - simple help
-  history: 3000,   // 3 seconds - viewing command
-  detail: 2000,    // 2 seconds - viewing command
-  rank: 3000,      // 3 seconds - viewing command
-  insults: 3000,   // 3 seconds - viewing command
-} as const;
+export const BASE_DELAY = 3000;      // Base cooldown: 3s
+export const VIOLATION_WINDOW = 10000; // 10-second window
+export const MAX_VIOLATIONS = 3;     // 3 commands in window → violation
+export const MAX_LEVEL = 10;         // Max escalation level
+export const LEVEL_RESET_TIME = 300000; // 5 minutes before level starts decreasing
+export const LEVEL_DECAY_INTERVAL = 60000; // 1 minute between level decreases
 
-/**
- * Burst detection settings - prevents rapid command usage
- * maxCommands: Maximum commands allowed in the time window
- * timeWindow: Time window in milliseconds
- */
-export const BURST_LIMITS = {
-  blame: { maxCommands: 3, timeWindow: 10000 },     // 3 commands per 10 seconds
-  unblame: { maxCommands: 2, timeWindow: 10000 },   // 2 commands per 10 seconds
-  archive: { maxCommands: 5, timeWindow: 10000 },   // 5 commands per 10 seconds
-  revert: { maxCommands: 2, timeWindow: 10000 },     // 2 commands per 10 seconds
-  radar: { maxCommands: 1, timeWindow: 15000 },     // 1 command per 15 seconds (admin)
-  help: { maxCommands: 8, timeWindow: 10000 },       // 8 commands per 10 seconds
-  history: { maxCommands: 5, timeWindow: 10000 },   // 5 commands per 10 seconds
-  detail: { maxCommands: 8, timeWindow: 10000 },    // 8 commands per 10 seconds
-  rank: { maxCommands: 5, timeWindow: 10000 },     // 5 commands per 10 seconds
-  insults: { maxCommands: 5, timeWindow: 10000 },  // 5 commands per 10 seconds
-} as const;
+// ============================================================================
+// 💬 MESSAGE CATEGORIES
+// ============================================================================
 
-/**
- * Progressive punishment settings - escalates penalties for repeat offenders
- * violationResetTime: Time in milliseconds before violations reset (5 minutes)
- * punishments: Array of punishment levels
- */
-export const PROGRESSIVE_PUNISHMENT = {
-  violationResetTime: 300000,    // 5 minutes without violations resets counter
-  punishments: [
-    { violations: 1, multiplier: 1.5 },    // 1st violation: 1.5x cooldown
-    { violations: 2, multiplier: 2.0 },    // 2nd violation: 2x cooldown  
-    { violations: 3, multiplier: 3.0 },    // 3rd violation: 3x cooldown
-    { violations: 4, multiplier: 5.0 },    // 4th violation: 5x cooldown
-    { violations: 5, blockTime: 60000 },   // 5th violation: 1 minute block
+const MESSAGE_CATEGORIES = {
+  cooldown: [
+    "Please wait `{time}` before using another command.",
+    "Command on cooldown. Try again in `{time}`.",
+    "Hold on! Wait `{time}` before your next attempt.",
+    "Rate limited. Please wait `{time}`.",
+    "Too soon! Wait `{time}` before retrying."
+  ],
+  
+  violation: [
+    "Too many commands! Wait `{time}` before trying again.",
+    "Command spam detected. Please wait `{time}`.",
+    "Slow down! Try again in `{time}`.",
+    "Rate limit exceeded. Wait `{time}` before retrying.",
+    "You're going too fast. Please wait `{time}`."
+  ],
+  
+  blocked: [
+    "You're blocked from using commands for `{time}` due to excessive spam.",
+    "Temporary block active. Wait `{time}` before trying again.",
+    "Command access blocked for `{time}` due to violations.",
+    "You've been temporarily blocked for `{time}` due to spam.",
+    "You're blocked for `{time}`. Please wait before trying again."
   ]
-} as const;
+};
 
 // ============================================================================
-// TYPES AND DATA STRUCTURES
+// 📊 DATA STRUCTURES
 // ============================================================================
 
-export type CommandName = keyof typeof BASE_COOLDOWNS;
-
-/**
- * Enhanced user tracking with burst detection and progressive punishment
- */
-interface UserCommandHistory {
-  timestamps: number[];           // Recent command timestamps
-  violations: number;             // Number of violations
-  lastViolationTime: number;      // When the last violation occurred
-  isBlocked: boolean;             // Whether user is temporarily blocked
-  blockUntil: number;             // When the block expires
+interface UserData {
+  timestamps: number[];
+  violationLevel: number;
+  nextAllowedTime: number;
+  isMaxLevel: boolean;
+  lastViolationTime: number; // When the last violation occurred
+  lastLevelDecrease: number; // When the level was last decreased
 }
 
-/**
- * Map to store enhanced user data: userId -> commandName -> UserCommandHistory
- */
-const userCommandData = new Map<string, Map<string, UserCommandHistory>>();
+const userData = new Map<string, UserData>();
 
 // ============================================================================
-// CORE FUNCTIONS - Enhanced spam prevention logic
+// 🚀 CORE COOLDOWN LOGIC (FIXED)
 // ============================================================================
 
-/**
- * Enhanced cooldown check with burst detection and progressive punishment
- * @param user The Discord user
- * @param commandName The command name
- * @returns Object with check result and details
- */
-export function checkEnhancedCooldown(
-  user: User, 
-  commandName: CommandName
-): { 
-  allowed: boolean; 
-  reason?: string; 
-  remainingTime?: number;
-  violationCount?: number;
-} {
-  const userId = user.id;
+export function checkCooldown(user: User): 
+  | { allowed: true }
+  | { allowed: false; reason: 'cooldown' | 'violation' | 'blocked'; remaining: number } {
   const now = Date.now();
   
-  // Get or create user's command data
-  if (!userCommandData.has(userId)) {
-    userCommandData.set(userId, new Map());
-  }
-  
-  const userCommandMap = userCommandData.get(userId)!;
-  let commandData = userCommandMap.get(commandName);
-  
-  // Initialize command data if it doesn't exist
-  if (!commandData) {
-    commandData = {
-      timestamps: [],
-      violations: 0,
+  // Get or create user data
+  let data = userData.get(user.id);
+  if (!data) {
+    data = { 
+      timestamps: [], 
+      violationLevel: 1, 
+      nextAllowedTime: 0, 
+      isMaxLevel: false,
       lastViolationTime: 0,
-      isBlocked: false,
-      blockUntil: 0
+      lastLevelDecrease: 0
     };
-    userCommandMap.set(commandName, commandData);
+    userData.set(user.id, data);
   }
-  
-  // Check if user is currently blocked
-  if (commandData.isBlocked && now < commandData.blockUntil) {
-    return {
-      allowed: false,
-      reason: 'blocked',
-      remainingTime: commandData.blockUntil - now,
-      violationCount: commandData.violations
-    };
-  }
-  
-  // Clear expired block
-  if (commandData.isBlocked && now >= commandData.blockUntil) {
-    commandData.isBlocked = false;
-    commandData.blockUntil = 0;
-  }
-  
-  // Clean old timestamps (older than the time window)
-  const burstLimit = BURST_LIMITS[commandName];
-  const cutoffTime = now - burstLimit.timeWindow;
-  commandData.timestamps = commandData.timestamps.filter(timestamp => timestamp > cutoffTime);
-  
-  // Check burst limit
-  if (commandData.timestamps.length >= burstLimit.maxCommands) {
-    // Violation detected - increment counter
-    commandData.violations++;
-    commandData.lastViolationTime = now;
-    
-    // Apply progressive punishment
-    const punishment = getProgressivePunishment(commandData.violations);
-    if (punishment.blockTime) {
-      // Block the user
-      commandData.isBlocked = true;
-      commandData.blockUntil = now + punishment.blockTime;
-      return {
-        allowed: false,
-        reason: 'blocked',
-        remainingTime: punishment.blockTime,
-        violationCount: commandData.violations
-      };
-    } else {
-      // Apply cooldown multiplier
-      const baseCooldown = BASE_COOLDOWNS[commandName];
-      const enhancedCooldown = baseCooldown * punishment.multiplier;
-      const oldestTimestamp = Math.min(...commandData.timestamps);
-      const remainingTime = (oldestTimestamp + burstLimit.timeWindow) - now;
-      
-      return {
-        allowed: false,
-        reason: 'burst_limit',
-        remainingTime: Math.max(remainingTime, enhancedCooldown),
-        violationCount: commandData.violations
-      };
-    }
-  }
-  
-  // Check if enough time has passed to reset violations
-  if (commandData.violations > 0 && (now - commandData.lastViolationTime) > PROGRESSIVE_PUNISHMENT.violationResetTime) {
-    commandData.violations = 0;
-  }
-  
-  // Check regular cooldown (with progressive punishment multiplier)
-  const punishment = getProgressivePunishment(commandData.violations);
-  const baseCooldown = BASE_COOLDOWNS[commandName];
-  const enhancedCooldown = baseCooldown * punishment.multiplier;
-  
-  if (commandData.timestamps.length > 0) {
-    const lastCommandTime = Math.max(...commandData.timestamps);
-    const timeSinceLastCommand = now - lastCommandTime;
-    
-    if (timeSinceLastCommand < enhancedCooldown) {
-      return {
-        allowed: false,
-        reason: 'cooldown',
-        remainingTime: enhancedCooldown - timeSinceLastCommand,
-        violationCount: commandData.violations
-      };
-    }
-  }
-  
-  return {
-    allowed: true,
-    violationCount: commandData.violations
-  };
-}
 
-/**
- * Get progressive punishment based on violation count
- */
-function getProgressivePunishment(violations: number): { multiplier: number; blockTime?: number } {
-  for (const punishment of PROGRESSIVE_PUNISHMENT.punishments) {
-    if (violations >= punishment.violations) {
-      if ('blockTime' in punishment) {
-        return { multiplier: 1, blockTime: punishment.blockTime };
-      } else {
-        return { multiplier: punishment.multiplier };
+  // Check for level decay (gradual reset over time)
+  if (data.violationLevel > 1) {
+    const timeSinceLastViolation = now - data.lastViolationTime;
+    const timeSinceLastDecrease = now - data.lastLevelDecrease;
+    
+    // If enough time has passed since last violation, start decreasing levels
+    if (timeSinceLastViolation >= LEVEL_RESET_TIME && timeSinceLastDecrease >= LEVEL_DECAY_INTERVAL) {
+      data.violationLevel = Math.max(1, data.violationLevel - 1);
+      data.lastLevelDecrease = now;
+      
+      // If we're no longer at max level, reset the flag
+      if (data.violationLevel < MAX_LEVEL) {
+        data.isMaxLevel = false;
       }
     }
   }
-  return { multiplier: 1 };
-}
 
-/**
- * Record a command usage (replaces setCooldown)
- * @param user The Discord user
- * @param commandName The command name
- */
-export function recordCommand(user: User, commandName: CommandName): void {
-  const userId = user.id;
-  const now = Date.now();
-  
-  // Get or create user's command data
-  if (!userCommandData.has(userId)) {
-    userCommandData.set(userId, new Map());
-  }
-  
-  const userCommandMap = userCommandData.get(userId)!;
-  let commandData = userCommandMap.get(commandName);
-  
-  // Initialize command data if it doesn't exist
-  if (!commandData) {
-    commandData = {
-      timestamps: [],
-      violations: 0,
-      lastViolationTime: 0,
-      isBlocked: false,
-      blockUntil: 0
+  // Check if user is in cooldown
+  if (now < data.nextAllowedTime) {
+    // If user is already at max level, don't increase duration further
+    if (data.isMaxLevel) {
+      return {
+        allowed: false,
+        reason: 'blocked',
+        remaining: data.nextAllowedTime - now
+      };
+    }
+    
+    // User is spamming during cooldown - increase violation level
+    data.violationLevel = Math.min(data.violationLevel + 1, MAX_LEVEL);
+    data.lastViolationTime = now; // Update last violation time
+    
+    // Check if we've reached max level
+    if (data.violationLevel >= MAX_LEVEL) {
+      data.isMaxLevel = true;
+    }
+    
+    // Calculate new delay with exponential growth
+    const newDelay = BASE_DELAY * Math.pow(2, data.violationLevel - 1);
+    
+    // Add new delay on top of existing one
+    data.nextAllowedTime += newDelay;
+    
+    return {
+      allowed: false,
+      reason: data.violationLevel >= MAX_LEVEL ? 'blocked' : 'cooldown',
+      remaining: data.nextAllowedTime - now
     };
-    userCommandMap.set(commandName, commandData);
   }
+
+  // If cooldown has expired, reset the max level flag if needed
+  if (data.isMaxLevel && now >= data.nextAllowedTime) {
+    data.isMaxLevel = false;
+    // Don't reset violation level here - let it decay naturally over time
+  }
+
+  // Clean old timestamps (keep only those from last 10 seconds)
+  data.timestamps = data.timestamps.filter(t => now - t < VIOLATION_WINDOW);
   
   // Add current timestamp
-  commandData.timestamps.push(now);
+  data.timestamps.push(now);
   
-  // Clean old timestamps (keep only recent ones)
-  const burstLimit = BURST_LIMITS[commandName];
-  const cutoffTime = now - burstLimit.timeWindow;
-  commandData.timestamps = commandData.timestamps.filter(timestamp => timestamp > cutoffTime);
+  // Check if user has exceeded violation threshold
+  if (data.timestamps.length >= MAX_VIOLATIONS) {
+    // If user is already at max level, use the fixed max duration
+    if (data.isMaxLevel) {
+      const maxDelay = BASE_DELAY * Math.pow(2, MAX_LEVEL - 1);
+      data.nextAllowedTime = now + maxDelay;
+      
+      return {
+        allowed: false,
+        reason: 'blocked',
+        remaining: maxDelay
+      };
+    }
+    
+    // Increase violation level
+    data.violationLevel = Math.min(data.violationLevel + 1, MAX_LEVEL);
+    data.lastViolationTime = now; // Update last violation time
+    
+    // Check if we've reached max level
+    if (data.violationLevel >= MAX_LEVEL) {
+      data.isMaxLevel = true;
+    }
+    
+    // Calculate new delay with exponential growth
+    const newDelay = BASE_DELAY * Math.pow(2, data.violationLevel - 1);
+    
+    // Set next allowed time
+    data.nextAllowedTime = now + newDelay;
+    
+    return {
+      allowed: false,
+      reason: data.violationLevel >= MAX_LEVEL ? 'blocked' : 'violation',
+      remaining: newDelay
+    };
+  }
+
+  // Apply base cooldown for normal operation - FIXED: Only apply if not in violation
+  // This ensures the first command shows 3s, not 8s
+  data.nextAllowedTime = now + BASE_DELAY;
+  return { allowed: true };
 }
 
 // ============================================================================
-// UTILITY FUNCTIONS - Helper functions for formatting and management
+// 💬 MESSAGE GENERATION
 // ============================================================================
 
-/**
- * Format remaining cooldown time into a human-readable string
- * @param remainingTime Time in milliseconds
- * @returns Formatted string like "2.5 seconds" or "1 minute"
- */
-export function formatCooldownTime(remainingTime: number): string {
-  const seconds = Math.ceil(remainingTime / 1000);
-  
-  if (seconds < 60) {
-    return `${seconds} second${seconds === 1 ? '' : 's'}`;
-  }
-  
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  
-  if (minutes === 1 && remainingSeconds === 0) {
-    return '1 minute';
-  }
-  
-  if (remainingSeconds === 0) {
-    return `${minutes} minutes`;
-  }
-  
-  return `${minutes} minute${minutes === 1 ? '' : 's'} ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'}`;
-}
-
-/**
- * Get user-friendly message for cooldown violations
- * @param reason The violation reason
- * @param remainingTime Remaining time in milliseconds
- * @param violationCount Number of violations
- * @returns User-friendly message
- */
-export function getCooldownMessage(reason: string, remainingTime: number, violationCount: number): string {
-  const timeStr = formatCooldownTime(remainingTime);
-  
-  switch (reason) {
-    case 'burst_limit':
-      return `🚫 **Too many commands!** Please wait ${timeStr} before using this command again. (Violation #${violationCount})`;
-    case 'blocked':
-      return `⛔ **Temporarily blocked!** You've been blocked for ${timeStr} due to repeated violations. (Violation #${violationCount})`;
-    case 'cooldown':
-      return `⏰ **Please wait** ${timeStr} before using this command again.`;
-    default:
-      return `⏰ Please wait ${timeStr} before using this command again.`;
-  }
-}
-
-/**
- * Clear command data for a specific user (useful for testing or admin commands)
- * @param user The Discord user
- * @param commandName Optional specific command to clear, or all commands if not provided
- */
-export function clearUserData(user: User, commandName?: CommandName): void {
-  const userId = user.id;
-  
-  if (!userCommandData.has(userId)) {
-    return;
-  }
-  
-  const userCommandMap = userCommandData.get(userId)!;
-  
-  if (commandName) {
-    userCommandMap.delete(commandName);
-  } else {
-    userCommandMap.clear();
-  }
-  
-  // Clean up empty user maps
-  if (userCommandMap.size === 0) {
-    userCommandData.delete(userId);
-  }
-}
-
-/**
- * Get command data for a user (useful for debugging)
- * @param user The Discord user
- * @returns Map of command names to UserCommandHistory
- */
-export function getUserCommandData(user: User): Map<string, UserCommandHistory> {
-  const userId = user.id;
-  return userCommandData.get(userId) ?? new Map();
+export function getCooldownMessage(remaining: number, reason: 'cooldown' | 'violation' | 'blocked' = 'cooldown') {
+  const time = formatDuration(remaining);
+  const messages = MESSAGE_CATEGORIES[reason];
+  const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+  return randomMessage.replace('{time}', time);
 }
 
 // ============================================================================
-// LEGACY FUNCTIONS - Backward compatibility (deprecated)
+// 🛠️ UTILITIES
 // ============================================================================
 
-/**
- * Legacy function for backward compatibility (deprecated)
- * @deprecated Use checkEnhancedCooldown instead
- */
-export function checkCooldown(user: User, commandName: CommandName): { isOnCooldown: boolean; remainingTime: number } {
-  const result = checkEnhancedCooldown(user, commandName);
-  return {
-    isOnCooldown: !result.allowed,
-    remainingTime: result.remainingTime ?? 0
-  };
-}
+export const formatDuration = (ms: number) => {
+  const seconds = Math.ceil(ms / 1000);
+  
+  if (seconds > 60) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  
+  return `${seconds}s`;
+};
 
-/**
- * Legacy function for backward compatibility (deprecated)
- * @deprecated Use recordCommand instead
- */
-export function setCooldown(user: User, commandName: CommandName): void {
-  recordCommand(user, commandName);
-}
+// ============================================================================
+// 🔧 ADMIN HELPERS
+// ============================================================================
+
+export const clearUserData = (userId: string) => userData.delete(userId);
+export const getUserData = (userId: string) => userData.get(userId);
+
+export const getSystemStats = () => {
+  let violations = 0, blocked = 0;
+  for (const d of userData.values()) {
+    violations += d.violationLevel - 1; // Subtract 1 for initial level
+    if (d.isMaxLevel) blocked++;
+  }
+  return { totalUsers: userData.size, totalViolations: violations, blockedUsers: blocked };
+};
+
+// ============================================================================
+// ⏰ RESET FUNCTIONALITY
+// ============================================================================
+
+export const resetUserCooldown = (userId: string) => {
+  const data = userData.get(userId);
+  if (data) {
+    data.violationLevel = 1;
+    data.isMaxLevel = false;
+    data.nextAllowedTime = 0;
+    data.timestamps = [];
+    data.lastViolationTime = 0;
+    data.lastLevelDecrease = 0;
+    return true;
+  }
+  return false;
+};
+
+// ============================================================================
+// 🔄 AUTOMATIC CLEANUP
+// ============================================================================
+
+// Clean up old user data to prevent memory leaks
+export const cleanupOldData = () => {
+  const now = Date.now();
+  const CLEANUP_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
+  
+  for (const [userId, data] of userData.entries()) {
+    // Remove users who haven't had violations in 24 hours and are at level 1
+    if (data.violationLevel === 1 && 
+        now - data.lastViolationTime > CLEANUP_THRESHOLD) {
+      userData.delete(userId);
+    }
+  }
+};
+
+// Get time until next level decrease for a user
+export const getTimeUntilLevelDecrease = (userId: string): number | null => {
+  const data = userData.get(userId);
+  if (!data || data.violationLevel <= 1) return null;
+  
+  const timeSinceLastViolation = Date.now() - data.lastViolationTime;
+  const timeSinceLastDecrease = Date.now() - data.lastLevelDecrease;
+  
+  if (timeSinceLastViolation < LEVEL_RESET_TIME) {
+    return LEVEL_RESET_TIME - timeSinceLastViolation;
+  }
+  
+  if (timeSinceLastDecrease < LEVEL_DECAY_INTERVAL) {
+    return LEVEL_DECAY_INTERVAL - timeSinceLastDecrease;
+  }
+  
+  return 0; // Ready for decrease
+};

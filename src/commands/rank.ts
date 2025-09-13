@@ -133,7 +133,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 // Export with spam protection
-export const execute = withSpamProtection('rank', executeCommand);
+export const execute = withSpamProtection(executeCommand);
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
   if (!customId.startsWith('rank:')) return;

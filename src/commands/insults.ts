@@ -71,7 +71,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 // Export with spam protection
-export const execute = withSpamProtection('insults', executeCommand);
+export const execute = withSpamProtection(executeCommand);
 
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {

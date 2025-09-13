@@ -31,7 +31,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 // Export with spam protection
-export const execute = withSpamProtection('history', executeCommand);
+export const execute = withSpamProtection(executeCommand);
 
 async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: number): Promise<PaginationData<any>> {
   try {

@@ -193,4 +193,4 @@ export async function handleButton(customId: string, interaction: ButtonInteract
 }
 
 // Export with spam protection
-export const execute = withSpamProtection('unblame', executeCommand);
+export const execute = withSpamProtection(executeCommand);
