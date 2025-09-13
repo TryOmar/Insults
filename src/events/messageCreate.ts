@@ -40,13 +40,13 @@ export async function handleMessage(message: Message) {
             radarEnabled: true,
           } as any),
         });
-        console.log('[radar] setup bootstrapped and enabled', { guildId });
+        // console.log('[radar] setup bootstrapped and enabled', { guildId });
       } catch (e) {
-        console.warn('[radar] failed to bootstrap setup; disabling radar for message', { guildId, error: e });
+        // console.warn('[radar] failed to bootstrap setup; disabling radar for message', { guildId, error: e });
         return;
       }
     }
-    console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled: (setup as any).radarEnabled });
+    // console.log('[radar] scanning message', { guildId, messageId: message.id, radarEnabled: (setup as any).radarEnabled });
     if (!(setup as any).radarEnabled) return;
 
     const content = message.content;
@@ -63,7 +63,7 @@ export async function handleMessage(message: Message) {
       .toLowerCase()
       .split(/[^\p{L}\p{Nd}]+/u)
       .filter(Boolean);
-    console.log('[radar] tokens', tokens);
+    // console.log('[radar] tokens', tokens);
     if (tokens.length === 0) return;
 
     // Build 1-gram, 2-gram, 3-gram candidates from message tokens
@@ -86,25 +86,25 @@ export async function handleMessage(message: Message) {
 
     // Get distinct bad words from existing insults table for this guild; fallback to global if none in guild
     let groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
-    console.log('[radar] distinct badwords count (guild)', groups.length);
+    // console.log('[radar] distinct badwords count (guild)', groups.length);
     if (!groups.length) {
       const globalGroups = await prisma.insult.groupBy({ by: ['insult'] });
-      console.log('[radar] distinct badwords count (global fallback)', globalGroups.length);
+      // console.log('[radar] distinct badwords count (global fallback)', globalGroups.length);
       groups = globalGroups;
     }
     if (!groups.length) return;
     const badwords = new Set(groups
       .map(g => normalizeForRadar(g.insult))
       .filter(Boolean));
-    console.log('[radar] badwords(size)', badwords.size);
+    // console.log('[radar] badwords(size)', badwords.size);
 
     // Find first matching candidate phrase (1-3 words)
     const hit = candidates.find(t => badwords.has(t));
-    console.log('[radar] hit', hit ?? null);
+    // console.log('[radar] hit', hit ?? null);
     if (!hit) return;
 
     // Record an automatic blame: target = author, blamer = bot-self
-    console.log('[radar] creating blame record');
+    // console.log('[radar] creating blame record');
     // Ensure FK rows exist
     await prisma.user.upsert({
       where: { id: message.author.id },
@@ -149,6 +149,6 @@ export async function handleMessage(message: Message) {
     }
   } catch (err) {
     // swallow radar errors to avoid spam
-    console.warn('[radar] error while scanning', err);
+    // console.warn('[radar] error while scanning', err);
   }
 }
