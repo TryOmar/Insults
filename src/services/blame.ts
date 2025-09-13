@@ -98,10 +98,9 @@ export function buildBlameEmbed(type: BlameEmbedType, options: {
   const usernameLabel = targetUsername ? `@${targetUsername}` : 'user';
   
   // Row 6: Blames against | Insults from
-  embed.addFields(
-    { name: `**Blames against ${usernameLabel}**`, value: String(totalBlames), inline: false },
-    { name: `**Insults from ${usernameLabel}**`, value: wrap(distinctSummary), inline: false }
-  );
+  embed.addFields({
+    name: `**Total Insults from ${usernameLabel}: ${totalBlames}**`,    value: wrap(distinctSummary), inline: false
+  });
   
   embed.setTimestamp(new Date(createdAt));
   
