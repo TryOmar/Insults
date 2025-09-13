@@ -32,18 +32,22 @@ async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: num
   try {
     const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
 
-    const [totalCount, distinctUsers, distinctInsults, entries, targetUser] = await Promise.all([
+    // Reduce concurrent database calls to avoid overwhelming the connection pool
+    // First, get the main data we need
+    const [totalCount, entries] = await Promise.all([
       prisma.insult.count({ where }),
-      prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length),
-      prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } }),
       prisma.insult.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      scope.userId ? prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : Promise.resolve(null),
     ]);
+
+    // Then get additional data sequentially to reduce load
+    const distinctUsers = await prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length);
+    const distinctInsults = await prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } });
+    const targetUser = scope.userId ? await prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : null;
 
     // Fetch blamer usernames
     const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
