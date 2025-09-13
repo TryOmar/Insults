@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('radar')
@@ -11,7 +12,7 @@ export const data = new SlashCommandBuilder()
     .setRequired(true)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (!interaction.guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     return;
@@ -30,3 +31,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({ content: `Radar is now ${enabled ? 'enabled' : 'disabled'} for this server.`, flags: MessageFlags.Ephemeral });
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('radar', executeCommand);

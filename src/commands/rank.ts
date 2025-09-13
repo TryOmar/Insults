@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionR
 import { prisma } from '../database/client.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { BlameButton } from '../utils/BlameButton.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 const PAGE_SIZE = 10;
 
@@ -120,7 +121,7 @@ function createRankPaginationManager(): RankPaginationManager {
   );
 }
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
@@ -130,6 +131,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const paginationManager = createRankPaginationManager();
   await paginationManager.handleInitialCommand(interaction, guildId);
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('rank', executeCommand);
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
   if (!customId.startsWith('rank:')) return;

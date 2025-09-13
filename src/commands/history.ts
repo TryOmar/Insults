@@ -4,6 +4,8 @@ import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
+import { safeInteractionReply } from '../utils/interactionValidation.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
 
@@ -14,7 +16,7 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show insult history for a user or the whole server')
   .addUserOption((opt) => opt.setName('user').setDescription('Optional: user to filter by').setRequired(false));
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
@@ -27,6 +29,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const paginationManager = createHistoryPaginationManager();
   await paginationManager.handleInitialCommand(interaction, scope);
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('history', executeCommand);
 
 async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: number): Promise<PaginationData<any>> {
   try {

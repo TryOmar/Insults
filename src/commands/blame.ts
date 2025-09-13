@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { blameUser } from '../services/blame.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('blame')
@@ -18,7 +19,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     const success = await safeInteractionReply(interaction, { 
@@ -69,3 +70,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // Ignore reaction failures (e.g., permissions)
   }
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('blame', executeCommand);

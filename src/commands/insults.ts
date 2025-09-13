@@ -4,6 +4,7 @@ import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 const PAGE_SIZE = 10;
 
@@ -22,7 +23,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(false)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     const success = await safeInteractionReply(interaction, { 
@@ -68,6 +69,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const paginationManager = createInsultsPaginationManager();
   await paginationManager.handleInitialCommand(interaction, scope);
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('insults', executeCommand);
 
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {

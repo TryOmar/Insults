@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, Permiss
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
@@ -13,7 +14,7 @@ export const data = new SlashCommandBuilder()
 type Page = { embeds: EmbedBuilder[] };
 const sessionStore = new Map<string, { pages: Page[]; currentPage: number }>();
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const raw = interaction.options.getString('id', true);
   const invokerId = interaction.user.id;
 
@@ -190,3 +191,6 @@ export async function handleButton(customId: string, interaction: ButtonInteract
   );
   await interaction.update({ embeds: session.pages[newPage - 1].embeds, components: [row] });
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('unblame', executeCommand);

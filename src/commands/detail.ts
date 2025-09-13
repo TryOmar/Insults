@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('detail')
@@ -9,7 +10,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('id').setDescription('Blame ID').setRequired(true)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const id = interaction.options.getInteger('id', true);
   const guildId = interaction.guildId;
   const guildName = interaction.guild?.name ?? 'Unknown guild';
@@ -59,6 +60,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.reply({ embeds: [embed] });
+  
   const sent = await interaction.fetchReply();
   try {
     if ('react' in sent && typeof sent.react === 'function') {
@@ -69,5 +71,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // ignore reaction failures
   }
 }
+
+// Export with spam protection
+export const execute = withSpamProtection('detail', executeCommand);
 
 

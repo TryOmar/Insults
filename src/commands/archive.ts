@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
+import { withSpamProtection } from '../utils/commandWrapper.js';
 
 const PAGE_SIZE = 10;
 
@@ -143,7 +144,7 @@ function createArchivePaginationManager(): PaginationManager<any> {
   );
 }
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
@@ -218,4 +219,5 @@ export async function handleButton(customId: string, interaction: ButtonInteract
   await paginationManager.respondWithPage(interaction, newPage, false, filter);
 }
 
-
+// Export with spam protection
+export const execute = withSpamProtection('archive', executeCommand);
