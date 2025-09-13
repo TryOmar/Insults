@@ -32,8 +32,6 @@ export class PaginationManager<T, D = PaginationData<T>> {
   }
 
   buildPaginationButtons(page: number, totalPages: number, ...args: any[]): ActionRowBuilder<ButtonBuilder>[] {
-    if (totalPages <= 1) return [];
-
     const row = new ActionRowBuilder<ButtonBuilder>();
     
     // Create a unique identifier for this pagination session
@@ -44,30 +42,30 @@ export class PaginationManager<T, D = PaginationData<T>> {
       .setCustomId(`${this.config.customIdPrefix}:first:${sessionId}`)
       .setEmoji('⏮️')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(page === 1);
+      .setDisabled(page === 1 || totalPages <= 1);
 
     // Previous page button (<)
     const prevButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:prev:${sessionId}`)
       .setEmoji('◀️')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(page === 1);
+      .setDisabled(page === 1 || totalPages <= 1);
 
     // Next page button (>)
     const nextButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:next:${sessionId}`)
       .setEmoji('▶️')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(page === totalPages);
+      .setDisabled(page === totalPages || totalPages <= 1);
 
     // Last page button (>>)
     const lastButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:last:${sessionId}`)
       .setEmoji('⏭️')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(page === totalPages);
+      .setDisabled(page === totalPages || totalPages <= 1);
 
-    // Refresh button (re-fetches current page)
+    // Refresh button (re-fetches current page) - always enabled
     const refreshButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:refresh:${sessionId}`)
       .setEmoji('🔄')
