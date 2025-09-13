@@ -12,11 +12,12 @@ export const data = new SlashCommandBuilder()
   .addStringOption((opt) =>
     opt
       .setName('insult')
-      .setDescription('Enter a single insult (up to 3 words).')
+      .setDescription('Enter a single insult (up to 3 words, max 20 chars per word).')
       .setRequired(true)
+      .setMaxLength(140)
   )
   .addStringOption((opt) =>
-    opt.setName('note').setDescription('Optional note (≤200 chars)').setRequired(false)
+    opt.setName('note').setDescription('Optional note (≤500 chars)').setRequired(false).setMaxLength(500)
   );
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {

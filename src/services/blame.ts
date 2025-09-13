@@ -119,17 +119,30 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
   }
 
   const insult = normalizeInput(insultRaw, 140);
-  // Keep full note; only collapse newlines and trim leading spaces in normalizer
-  const note = normalizeInput(noteRaw ?? null, Number.MAX_SAFE_INTEGER);
+  // Set reasonable limit for notes (500 characters)
+  const note = normalizeInput(noteRaw ?? null, 500);
 
   if (!insult) {
     return { ok: false, error: { message: 'Insult must be 1–140 characters.' } };
   }
 
   // Enforce up to 3 words for consistency with radar (supports 1–3 word phrases)
-  const wordCount = insult.split(/\s+/).filter(Boolean).length;
+  const words = insult.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
   if (wordCount > 3) {
     return { ok: false, error: { message: 'Insult must be a single phrase of up to 3 words.' } };
+  }
+
+  // Check individual word length (max 20 characters per word)
+  for (const word of words) {
+    if (word.length > 20) {
+      return { ok: false, error: { message: 'Each insult word must be 20 characters or less.' } };
+    }
+  }
+
+  // Validate note length
+  if (note && note.length > 500) {
+    return { ok: false, error: { message: 'Note must be 500 characters or less.' } };
   }
 
   // Allow spaces inside the insult phrase; no strict single-token rule

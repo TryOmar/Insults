@@ -19,8 +19,9 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show insult stats overall or for a specific word')
   .addStringOption(opt =>
     opt.setName('word')
-      .setDescription('Optional: specific insult phrase (up to 3 words)')
+      .setDescription('Optional: specific insult phrase (up to 3 words, max 20 chars per word)')
       .setRequired(false)
+      .setMaxLength(140)
   );
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
@@ -41,7 +42,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       .split(/[^\p{L}\p{Nd}]+/u)
       .filter(Boolean)
       .join(' ');
-    const wc = normalized.split(/\s+/).filter(Boolean).length;
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const wc = words.length;
     if (wc === 0) {
       const success = await safeInteractionReply(interaction, { 
         content: 'Please enter an insult phrase.', 
@@ -57,6 +59,17 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       });
       if (!success) return;
       return;
+    }
+    // Check individual word length (max 20 characters per word)
+    for (const word of words) {
+      if (word.length > 20) {
+        const success = await safeInteractionReply(interaction, { 
+          content: 'Each insult word must be 20 characters or less.', 
+          flags: MessageFlags.Ephemeral 
+        });
+        if (!success) return;
+        return;
+      }
     }
     // Overwrite the raw input with normalized for exact DB match
     (interaction as any)._normalizedWord = normalized;
