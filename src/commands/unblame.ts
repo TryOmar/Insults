@@ -6,7 +6,7 @@ import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
-  .setDescription('Delete a blame record by ID (anyone can unblame others, but you cannot unblame yourself if you are the target but not the blamer)')
+  .setDescription('Delete a blame record by ID')
   .addStringOption(opt =>
     opt.setName('id').setDescription('Blame ID').setRequired(true)
   );
