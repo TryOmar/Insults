@@ -1,4 +1,4 @@
-import { EmbedBuilder, Message, userMention } from 'discord.js';
+import { EmbedBuilder, Message, MessageFlags, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 
@@ -7,12 +7,15 @@ export async function handleMessage(message: Message) {
   if (message.author.bot || message.system) return;
   if (!message.client.user) return;
 
-  // If the bot is mentioned in the message, send private message directing to /help
+  // If the bot is mentioned in the message, reply with ephemeral message directing to /help
   if (message.mentions.has(message.client.user, { ignoreEveryone: true, ignoreRoles: true })) {
     try {
-      await message.author.send('Please use `/help` to see all available commands and learn how to use the bot.');
+      await message.reply({ 
+        content: 'Please use `/help` to see all available commands and learn how to use the bot.',
+        flags: MessageFlags.Ephemeral
+      });
     } catch {
-      // Silently ignore errors (e.g., user has DMs disabled)
+      // Silently ignore errors (e.g., lack of permission)
     }
   }
 
