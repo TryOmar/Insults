@@ -29,61 +29,70 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 }
 
 async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: number): Promise<PaginationData<any>> {
-  const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
+  try {
+    const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
 
-  const [totalCount, distinctUsers, distinctInsults, entries, targetUser] = await Promise.all([
-    prisma.insult.count({ where }),
-    prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length),
-    prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } }),
-    prisma.insult.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    scope.userId ? prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : Promise.resolve(null),
-  ]);
+    const [totalCount, distinctUsers, distinctInsults, entries, targetUser] = await Promise.all([
+      prisma.insult.count({ where }),
+      prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length),
+      prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } }),
+      prisma.insult.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      scope.userId ? prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : Promise.resolve(null),
+    ]);
 
-  // Fetch blamer usernames
-  const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
-  const blamers = uniqueBlamerIds.length
-    ? await prisma.user.findMany({ where: { id: { in: uniqueBlamerIds } }, select: { id: true, username: true } })
-    : [];
-  const blamerMap = new Map(blamers.map((u) => [u.id, u.username]));
+    // Fetch blamer usernames
+    const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
+    const blamers = uniqueBlamerIds.length
+      ? await prisma.user.findMany({ where: { id: { in: uniqueBlamerIds } }, select: { id: true, username: true } })
+      : [];
+    const blamerMap = new Map(blamers.map((u) => [u.id, u.username]));
 
-  // Fetch insulted user usernames
-  const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
-  const insultedUsers = uniqueInsultedIds.length
-    ? await prisma.user.findMany({ where: { id: { in: uniqueInsultedIds } }, select: { id: true, username: true } })
-    : [];
-  const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
+    // Fetch insulted user usernames
+    const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
+    const insultedUsers = uniqueInsultedIds.length
+      ? await prisma.user.findMany({ where: { id: { in: uniqueInsultedIds } }, select: { id: true, username: true } })
+      : [];
+    const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
 
-  // Build distinct insults summary with counts using the formatter
-  const insultGroups = distinctInsults;
-  const formattedInsults = formatInsultFrequencyPairs(insultGroups);
+    // Build distinct insults summary with counts using the formatter
+    const insultGroups = distinctInsults;
+    const formattedInsults = formatInsultFrequencyPairs(insultGroups);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  return {
-    items: entries,
-    totalCount,
-    currentPage: page,
-    totalPages,
-    // Additional data for the embed
-    distinctUsers,
-    blamerMap,
-    insultedUserMap,
-    insultGroups,
-    formattedInsults,
-    targetUsername: targetUser?.username ?? null
-  } as PaginationData<any> & {
-    distinctUsers: number;
-    blamerMap: Map<string, string>;
-    insultedUserMap: Map<string, string>;
-    insultGroups: Array<{ insult: string; _count: { insult: number } }>;
-    formattedInsults: string;
-    targetUsername: string | null;
-  };
+    return {
+      items: entries,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      // Additional data for the embed
+      distinctUsers,
+      blamerMap,
+      insultedUserMap,
+      insultGroups,
+      formattedInsults,
+      targetUsername: targetUser?.username ?? null
+    } as PaginationData<any> & {
+      distinctUsers: number;
+      blamerMap: Map<string, string>;
+      insultedUserMap: Map<string, string>;
+      insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+      formattedInsults: string;
+      targetUsername: string | null;
+    };
+  } catch (error) {
+    // Check if this is a database connection error
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
+      throw new Error('Database connection failed. Please try again later.');
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 function buildHistoryEmbed(data: PaginationData<any> & {
@@ -224,13 +233,23 @@ export async function handleButton(customId: string, interaction: ButtonInteract
       break;
     case 'next':
       // Get current data to determine total pages
-      const currentData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
-      newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      try {
+        const currentData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
+        newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      } catch (error) {
+        console.error('Error fetching data for next button:', error);
+        return; // Exit early if we can't fetch data
+      }
       break;
     case 'last':
       // Get current data to determine total pages
-      const lastData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
-      newPage = lastData.totalPages;
+      try {
+        const lastData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
+        newPage = lastData.totalPages;
+      } catch (error) {
+        console.error('Error fetching data for last button:', error);
+        return; // Exit early if we can't fetch data
+      }
       break;
     case 'refresh':
       newPage = sessionParsed.page; // Stay on current page but refresh data

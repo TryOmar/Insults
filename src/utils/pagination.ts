@@ -173,9 +173,19 @@ export class PaginationManager<T, D = PaginationData<T>> {
         return;
       }
       
+      // Create a more specific error message based on the error type
+      let errorMessage = 'An error occurred while fetching data. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('Database connection failed')) {
+          errorMessage = 'Database connection failed. Please try again later.';
+        } else if (error.message.includes('P1001')) {
+          errorMessage = 'Database connection failed. Please try again later.';
+        }
+      }
+
       const errorEmbed = new EmbedBuilder()
         .setTitle('❌ Error')
-        .setDescription('An error occurred while fetching data. Please try again.')
+        .setDescription(errorMessage)
         .setColor(0xFF0000);
 
       if (isInitial) {
