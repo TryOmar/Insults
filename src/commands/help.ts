@@ -1,6 +1,9 @@
-import { ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType, StringSelectMenuInteraction } from 'discord.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { BASE_DELAY, VIOLATION_WINDOW, MAX_VIOLATIONS, MAX_LEVEL, LEVEL_RESET_TIME, LEVEL_DECAY_INTERVAL } from '../utils/cooldown.js';
+
+// Track help message timeouts to remove dropdowns after 5 minutes
+const helpMessageTimeouts = new Map<string, NodeJS.Timeout>();
 
 export const data = new SlashCommandBuilder()
   .setName('help')
@@ -71,6 +74,13 @@ const COMMAND_INFO = {
     userStory: '**User Story:** As a user or admin, I want to restore accidentally deleted blame records back to active status when they were removed by mistake.',
     details: '**Parameters:**\n• `id` (required) - The archived blame ID to restore\n\n**Permissions:**\n• Original blamer can restore their records\n• Admins can restore any record\n\n**Features:**\n• Creates new active record with new ID\n• Removes from archive after restoration\n• Shows mapping of original → new ID\n• Detailed summary of restoration process'
   },
+  clear: {
+    name: 'clear',
+    description: 'Clear DM messages sent by the bot to you',
+    usage: '`/clear [count]`',
+    userStory: '**User Story:** As a user, I want to clean up my DM conversation with the bot by removing a specific number of messages the bot has sent to me.',
+    details: '**Parameters:**\n• `count` (optional) - Number of bot messages to clear (default: 50, max: 100)\n\n**Usage:**\n• Can only be used in private messages (DMs) with the bot\n• Clears the most recent bot messages first\n• Handles message age limits gracefully\n• Shows count of successfully deleted messages\n\n**Features:**\n• Customizable message count (1-100)\n• Individual deletion for reliability\n• Error handling for permission issues\n• Confirmation of deletion count\n• Smart fetching to ensure enough bot messages are found'
+  },
   'anti-spam': {
     name: 'anti-spam',
     description: 'Anti-spam system information (NOT A COMMAND)',
@@ -82,7 +92,7 @@ const COMMAND_INFO = {
 
 // Function to create the main help embed
 function createMainHelpEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setTitle('🗡️ Insults Bot - Command Help')
     .setDescription('A comprehensive tracking system for monitoring and managing insult patterns in your Discord server')
     .setColor(0xDC143C)
@@ -99,16 +109,18 @@ function createMainHelpEmbed(): EmbedBuilder {
       },
       {
         name: '⚙️ Management Commands',
-        value: '`/radar <enabled>` - Toggle automatic insult detection\n`/archive [@user] [role]` - Show archived blame records\n`/revert <id>` - Restore archived blames back into active records',
-        inline: false
-      },
-      {
-        name: '🔍 Get Detailed Help',
-        value: 'Use the dropdown below to select any command for detailed information, user stories, and examples.',
+        value: '`/radar <enabled>` - Toggle automatic insult detection\n`/archive [@user] [role]` - Show archived blame records\n`/revert <id>` - Restore archived blames back into active records\n`/clear [count]` - Clear DM messages sent by the bot (DM only)',
         inline: false
       }
-    )
-    .setTimestamp();
+    );
+
+  embed.addFields({
+    name: '🔍 Get Detailed Help',
+    value: 'Use the dropdown below to select any command for detailed information, user stories, and examples.',
+    inline: false
+  });
+
+  return embed.setTimestamp();
 }
 
 // Function to create command detail embed
@@ -139,10 +151,7 @@ function createCommandDetailEmbed(commandInfo: any): EmbedBuilder {
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
-  if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
-    return;
-  }
+  const isDM = !guildId;
 
   // Create command selection dropdown
   const selectMenu = new StringSelectMenuBuilder()
@@ -163,51 +172,88 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-  // Send initial response with main embed and dropdown
-  await interaction.reply({ 
+  // Show interactive help with dropdown in both DMs and server channels
+  const reply = await interaction.reply({ 
     embeds: [createMainHelpEmbed()], 
-    components: [row] 
+    components: [row]
   });
+  
+  // Set timeout to remove dropdown after 5 minutes
+  const timeout = setTimeout(async () => {
+    try {
+      await interaction.editReply({ components: [] });
+    } catch (error) {
+      // Ignore errors (message might be deleted or interaction expired)
+    }
+    helpMessageTimeouts.delete(interaction.id);
+  }, 300000); // 5 minutes
+  
+  helpMessageTimeouts.set(interaction.id, timeout);
+}
 
-  // Handle dropdown selection
-  try {
-    const collector = interaction.channel?.createMessageComponentCollector({
-      componentType: ComponentType.StringSelect,
-      time: 300000, // 5 minutes
-      filter: i => i.user.id === interaction.user.id && i.customId === 'help_command_select'
+// Function to handle string select menu interactions
+export async function handleStringSelect(selectInteraction: StringSelectMenuInteraction) {
+  const selectedValue = selectInteraction.values[0];
+  
+  // Create the dropdown row for reuse
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('help_command_select')
+    .setPlaceholder('Select a command for detailed help...')
+    .addOptions([
+      new StringSelectMenuOptionBuilder()
+        .setLabel('🏠 Back to Main Help')
+        .setDescription('Return to the main help overview')
+        .setValue('main_help'),
+      ...Object.values(COMMAND_INFO).map(cmd => 
+        new StringSelectMenuOptionBuilder()
+          .setLabel(`/${cmd.name}`)
+          .setDescription(cmd.description)
+          .setValue(cmd.name)
+      )
+    ]);
+
+  const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+  
+  if (selectedValue === 'main_help') {
+    // Show main help embed
+    await selectInteraction.update({ 
+      embeds: [createMainHelpEmbed()], 
+      components: [row] // Keep the dropdown for further selections
     });
-
-    collector?.on('collect', async (selectInteraction) => {
-      const selectedValue = selectInteraction.values[0];
+  } else {
+    // Show command detail
+    const commandInfo = COMMAND_INFO[selectedValue as keyof typeof COMMAND_INFO];
+    
+    if (commandInfo) {
+      const detailEmbed = createCommandDetailEmbed(commandInfo);
       
-      if (selectedValue === 'main_help') {
-        // Show main help embed
-        await selectInteraction.update({ 
-          embeds: [createMainHelpEmbed()], 
-          components: [row] // Keep the dropdown for further selections
-        });
-      } else {
-        // Show command detail
-        const commandInfo = COMMAND_INFO[selectedValue as keyof typeof COMMAND_INFO];
-        
-        if (commandInfo) {
-          const detailEmbed = createCommandDetailEmbed(commandInfo);
-          
-          // Update the main message with the selected command details
-          await selectInteraction.update({ 
-            embeds: [detailEmbed], 
-            components: [row] // Keep the dropdown for further selections
-          });
-        }
+      // Update the main message with the selected command details
+      await selectInteraction.update({ 
+        embeds: [detailEmbed], 
+        components: [row] // Keep the dropdown for further selections
+      });
+    }
+  }
+  
+  // Clear any existing timeout for this interaction and set a new one
+  const originalInteractionId = selectInteraction.message.interaction?.id;
+  if (originalInteractionId) {
+    const existingTimeout = helpMessageTimeouts.get(originalInteractionId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+    
+    // Set new timeout to remove dropdown after 5 minutes
+    const timeout = setTimeout(async () => {
+      try {
+        await selectInteraction.editReply({ components: [] });
+      } catch (error) {
+        // Ignore errors (message might be deleted or interaction expired)
       }
-    });
-
-    collector?.on('end', () => {
-      // Remove the dropdown when collector ends
-      interaction.editReply({ components: [] }).catch(() => {});
-    });
-  } catch (error) {
-    console.error('Error handling help command selection:', error);
+      helpMessageTimeouts.delete(originalInteractionId);
+    }, 300000); // 5 minutes
+    
+    helpMessageTimeouts.set(originalInteractionId, timeout);
   }
 }
 

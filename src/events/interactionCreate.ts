@@ -10,6 +10,7 @@ import * as help from '../commands/help.js';
 import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as radar from '../commands/radar.js';
+import * as clear from '../commands/clear.js';
 import { BlameButton } from '../utils/BlameButton.js';
 
 
@@ -60,6 +61,7 @@ export async function handleInteraction(interaction: Interaction) {
       history: history.execute,
       insults: insults.execute,
       radar: radar.execute,
+      clear: clear.execute,
     };
 
     const handler = map[interaction.commandName];
@@ -194,6 +196,46 @@ export async function handleInteraction(interaction: Interaction) {
     return;
   }
 
+
+  // String Select Menu interactions
+  if (interaction.isStringSelectMenu()) {
+    const stringSelect = interaction as StringSelectMenuInteraction;
+    try {
+      if (stringSelect.customId === 'help_command_select') {
+        await help.handleStringSelect(stringSelect);
+      }
+    } catch (error) {
+      // Only log if it's not an invalid interaction error
+      if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+        console.error(`Error handling string select menu interaction ${stringSelect.customId}:`, error);
+      }
+      
+      if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
+        console.log(`String select menu interaction ${stringSelect.customId} is invalid, skipping error response`);
+        return;
+      }
+      
+      if (isInteractionExpired(stringSelect)) {
+        console.log(`String select menu interaction ${stringSelect.customId} has expired, skipping error response`);
+        return;
+      }
+      
+      if (!stringSelect.replied && !stringSelect.deferred) {
+        try {
+          await stringSelect.reply({ 
+            content: 'An error occurred while processing your request.', 
+            flags: MessageFlags.Ephemeral
+          });
+        } catch (replyError) {
+          // Only log if it's not an invalid interaction error
+          if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
+            console.log('Failed to reply to string select menu interaction:', replyError);
+          }
+        }
+      }
+    }
+    return;
+  }
 
   // User Select Menu interactions
   if (interaction.isUserSelectMenu()) {

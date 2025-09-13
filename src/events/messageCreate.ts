@@ -19,6 +19,36 @@ export async function handleMessage(message: Message) {
     }
   }
 
+  // Handle DM messages
+  if (!message.guildId) {
+    // This is a DM message
+    console.log('DM message received from:', message.author.username, 'Content:', message.content);
+    try {
+      const embed = new EmbedBuilder()
+        .setTitle('🗡️ Insults Bot')
+        .setDescription('Hello! I\'m the Insults Bot that helps track and manage insult patterns in Discord servers.')
+        .setColor(0xDC143C)
+        .addFields(
+          {
+            name: 'What I do:',
+            value: '• Record and track insults between users\n• Generate leaderboards and statistics\n• Provide detailed history and analytics\n• Help moderate server interactions',
+            inline: false
+          },
+          {
+            name: 'Get Started:',
+            value: 'Use `/help` to see all available commands and learn how to use me!',
+            inline: false
+          }
+        )
+        .setTimestamp();
+
+      await message.reply({ embeds: [embed] });
+    } catch {
+      // Silently ignore errors (e.g., user has DMs disabled)
+    }
+    return; // Don't process radar for DM messages
+  }
+
   // Auto-scan radar
   try {
     const guildId = message.guildId;

@@ -4,7 +4,7 @@ import { onReady } from './events/ready.js';
 import { handleInteraction } from './events/interactionCreate.js';
 import { handleMessage } from './events/messageCreate.js';
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages] });
 
 client.once('clientReady', async () => {
   await onReady(client);

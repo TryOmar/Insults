@@ -10,10 +10,11 @@ import { data as insults } from '../commands/insults.js';
 import { data as radar } from '../commands/radar.js';
 import { data as archive } from '../commands/archive.js';
 import { data as revert } from '../commands/revert.js';
+import { data as clear } from '../commands/clear.js';
 
 export async function registerAllCommands(guilds?: Map<string, any>) {
   const rest = new REST({ version: '10' }).setToken(config.token);
-  const commandJson = [blame, rank, detail, unblame, help, history, insults, radar, archive, revert].map((c) => c.toJSON());
+  const commandJson = [blame, rank, detail, unblame, help, history, insults, radar, archive, revert, clear].map((c) => c.toJSON());
 
   console.log('— Slash Command Registration —');
   console.log(`Client ID: ${config.clientId}`);
