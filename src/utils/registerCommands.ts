@@ -59,10 +59,17 @@ export async function registerAllCommands(guilds?: Map<string, any>) {
 
 // Allow running directly: npx tsx src/utils/registerCommands.ts
 if (import.meta.url === `file://${process.argv[1]}`) {
-  registerAllCommands().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  // Only register commands if REGISTER_COMMANDS environment variable is set
+  if (process.env.REGISTER_COMMANDS === 'true') {
+    registerAllCommands().catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else {
+    console.log('⚠️ REGISTER_COMMANDS not set to "true", skipping command registration');
+    console.log('💡 To register commands, run with: REGISTER_COMMANDS=true node dist/utils/registerCommands.js');
+    process.exit(0);
+  }
 }
 
 

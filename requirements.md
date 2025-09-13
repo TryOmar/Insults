@@ -23,8 +23,8 @@ The Insults Bot is a Discord bot that records, ranks, and analyzes insulting lan
 - Purpose: Add an insult record for a mentioned user.
 - Parameters
   - `user` (required, user mention): Insulted user.
-  - `insult` (required, string ≤ 140 chars): Word or short phrase.
-  - `note` (optional, string ≤ 200 chars): Context or comment.
+  - `insult` (required, string ≤ 140 chars): Word or short phrase (up to 3 words, max 20 chars per word).
+  - `note` (optional, string ≤ 500 chars): Context or comment.
 - Behavior
   - Records `user_id`, `blamer_id` (invoker), `insult`, `note`, `created_at`.
   - Ensures `user` and `blamer` are not bots; if they are, return an error.
@@ -110,8 +110,8 @@ CREATE INDEX IF NOT EXISTS idx_insults_guild_blamer ON insults (guild_id, blamer
 ```
 
 ## 6. Validation & Constraints
-- `insult`: 1–140 chars; trimmed; no newlines.
-- `note`: 0–200 chars; trimmed; newlines collapsed or rejected.
+- `insult`: 1–140 chars; trimmed; no newlines; up to 3 words; max 20 chars per word.
+- `note`: 0–500 chars; trimmed; newlines collapsed or rejected.
 - `user` and `blamer` must differ; invoker can blame self (allowed) – configurable later.
 - Ignore or reject bot users for both `user` and `blamer` (MVP: reject with error).
 - All queries scoped by `guild_id` to avoid cross-server leakage.
