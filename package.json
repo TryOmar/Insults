@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "deploy": "node deploy.js",
     "register": "node scripts/register-commands.js",
+    "clean": "node scripts/clean-dev-commands.js",
     "restart": "node scripts/restart-server.js",
     "upload": "node scripts/upload.js"
   },

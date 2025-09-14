@@ -21,42 +21,41 @@ export async function registerAllCommands(guilds?: Map<string, any>) {
   console.log(`Client ID: ${config.clientId}`);
   console.log(`Commands to register: ${commandJson.length}`);
 
-  // If no guilds provided, check for DEV_GUILD_ID for backward compatibility
-  if (!guilds || guilds.size === 0) {
-    const devGuildId = process.env.DEV_GUILD_ID;
-    if (devGuildId) {
-      console.log(`DEV_GUILD_ID: ${devGuildId} (development mode)`);
-      const route = Routes.applicationGuildCommands(config.clientId, devGuildId);
-      console.log(`Route: PUT ${route}`);
-      const res = (await rest.put(route, { body: commandJson })) as unknown as any[];
-      console.log(`Registered GUILD slash commands for dev guild ${devGuildId}. API response items: ${Array.isArray(res) ? res.length : 'unknown'}`);
+  // Always use GLOBAL registration - delete existing commands first, then register new ones
+  console.log(`Using GLOBAL registration`);
+  
+  try {
+    // First, get and delete existing global commands
+    console.log('🧹 Cleaning up existing global commands...');
+    const existingCommands = await rest.get(Routes.applicationCommands(config.clientId));
+    console.log(`Found ${existingCommands.length} existing global commands`);
+    
+    if (existingCommands.length > 0) {
+      console.log(`🗑️ Deleting ${existingCommands.length} existing global commands...`);
+      for (const command of existingCommands) {
+        try {
+          await rest.delete(Routes.applicationCommand(config.clientId, command.id));
+          console.log(`  ✅ Deleted: ${command.name}`);
+        } catch (error) {
+          console.error(`  ❌ Failed to delete ${command.name}:`, error.message);
+        }
+      }
+      console.log(`✅ Cleanup completed for global commands`);
     } else {
-      console.log(`DEV_GUILD_ID: (none, using GLOBAL)`);
-      const route = Routes.applicationCommands(config.clientId);
-      console.log(`Route: PUT ${route}`);
-      const res = (await rest.put(route, { body: commandJson })) as unknown as any[];
-      console.log(`Registered GLOBAL slash commands. API response items: ${Array.isArray(res) ? res.length : 'unknown'}`);
+      console.log(`✅ No existing global commands to clean up`);
     }
-    return;
+    
+    // Now register new commands
+    console.log('📝 Registering new global commands...');
+    const route = Routes.applicationCommands(config.clientId);
+    console.log(`Route: PUT ${route}`);
+    const res = (await rest.put(route, { body: commandJson })) as unknown as any[];
+    console.log(`✅ Registered GLOBAL slash commands. API response items: ${Array.isArray(res) ? res.length : 'unknown'}`);
+    
+  } catch (error) {
+    console.error(`❌ Failed to register global commands:`, error.message);
+    throw error;
   }
-
-  // Register commands for each guild
-  console.log(`Registering commands for ${guilds.size} guild(s)`);
-  let successCount = 0;
-  
-  for (const [guildId, guild] of guilds) {
-    try {
-      const route = Routes.applicationGuildCommands(config.clientId, guildId);
-      console.log(`Route: PUT ${route} (${guild.name})`);
-      const res = (await rest.put(route, { body: commandJson })) as unknown as any[];
-      console.log(`✅ Registered commands for guild: ${guild.name} (${guildId}). API response items: ${Array.isArray(res) ? res.length : 'unknown'}`);
-      successCount++;
-    } catch (error) {
-      console.error(`❌ Failed to register commands for guild: ${guild.name} (${guildId}):`, error);
-    }
-  }
-  
-  console.log(`🎉 Command registration completed (${successCount}/${guilds.size} successful)`);
 }
 
 // Allow running directly: npx tsx src/utils/registerCommands.ts
