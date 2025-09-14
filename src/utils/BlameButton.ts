@@ -13,6 +13,7 @@ import {
 } from 'discord.js';
 import { blameUser, BlameParams } from '../services/blame.js';
 import { isDiscordAPIError, isInteractionInvalidError } from './interactionValidation.js';
+import { logGameplayAction } from './channelLogging.js';
 
 export class BlameButton {
   static createBlameButton(): ButtonBuilder {
@@ -206,6 +207,18 @@ export class BlameButton {
         });
         return;
       }
+
+      // Log the gameplay action to insults channel
+      await logGameplayAction(interaction.guild!, {
+        action: 'blame',
+        target: targetUser.user,
+        blamer: interaction.user,
+        insult: insult,
+        note: note || undefined,
+        blameId: result.data.insultId,
+        embed: result.data.publicEmbed,
+        addReactions: true
+      });
 
       // Send the public embed as a follow-up message (not a reply)
       const followUp = await interaction.followUp({ 
