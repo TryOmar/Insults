@@ -3,6 +3,8 @@ import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { guildSetupService } from '../services/guildSetup.js';
 import { checkCooldown } from '../utils/cooldown.js';
+import { safeGroupInsultsByText } from '../queries/insults.js';
+import { safeUpsertUser } from '../queries/users.js';
 
 /**
  * Handles when the bot is mentioned in a message
@@ -67,26 +69,24 @@ export async function handleDMMessage(message: Message): Promise<void> {
 }
 
 /**
- * Normalizes text for radar scanning by collapsing to letter/number tokens joined by single spaces
+ * Extracts exact words from text for radar scanning (preserves original case and spacing)
  */
-export function normalizeForRadar(text: string): string {
+export function extractExactWords(text: string): string[] {
   return text
-    .toLowerCase()
-    .split(/[^\p{L}\p{Nd}]+/u)
-    .filter(Boolean)
-    .join(' ');
+    .split(/\s+/)
+    .filter(word => word.length > 0);
 }
 
 /**
- * Generates n-grams from a list of tokens
+ * Generates n-grams from a list of exact words
  */
-export function generateNGrams(tokens: string[], maxN: number = 3): string[] {
+export function generateNGrams(words: string[], maxN: number = 3): string[] {
   const ngrams: string[] = [];
   
-  for (let i = 0; i < tokens.length; i++) {
+  for (let i = 0; i < words.length; i++) {
     let current = '';
-    for (let n = 1; n <= maxN && i + n <= tokens.length; n++) {
-      current = n === 1 ? tokens[i] : current + ' ' + tokens[i + n - 1];
+    for (let n = 1; n <= maxN && i + n <= words.length; n++) {
+      current = n === 1 ? words[i] : current + ' ' + words[i + n - 1];
       ngrams.push(current);
     }
   }
@@ -119,23 +119,20 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
   const content = message.content;
   if (!content || content.trim().length === 0) return;
 
-  // Tokenize the message content
-  const tokens = content
-    .toLowerCase()
-    .split(/[^\p{L}\p{Nd}]+/u)
-    .filter(Boolean);
+  // Extract exact words from the message content
+  const words = extractExactWords(content);
   
-  if (tokens.length === 0) return;
+  if (words.length === 0) return;
 
   // Generate n-gram candidates
-  const candidates = generateNGrams(tokens);
+  const candidates = generateNGrams(words);
 
   // Get distinct bad words from existing insults table for this guild only
-  const groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
+  const groups = await safeGroupInsultsByText(guildId);
   if (!groups.length) return;
   
   const badwords = new Set(groups
-    .map(g => normalizeForRadar(g.insult))
+    .map(g => g.insult)
     .filter(Boolean));
 
   // Find first matching candidate phrase (1-3 words)
@@ -153,16 +150,8 @@ async function recordAutoBlame(message: Message, insult: string, originalContent
   if (!message.guildId || !message.client.user) return;
 
   // Ensure FK rows exist
-  await prisma.user.upsert({
-    where: { id: message.author.id },
-    update: { username: message.author.username },
-    create: { id: message.author.id, username: message.author.username },
-  });
-  await prisma.user.upsert({
-    where: { id: message.client.user.id },
-    update: { username: message.client.user.username },
-    create: { id: message.client.user.id, username: message.client.user.username },
-  });
+  await safeUpsertUser(message.author.id, message.author.username);
+  await safeUpsertUser(message.client.user.id, message.client.user.username);
 
   // Include the author's original message as the note (newlines collapsed; no truncation)
   const note = originalContent.replace(/\n+/g, ' ').trim();

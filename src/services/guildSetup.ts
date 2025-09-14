@@ -1,4 +1,5 @@
 import { prisma } from '../database/client.js';
+import { safeFindSetupByGuildId, safeCreateSetup } from '../queries/setup.js';
 
 /**
  * Service for managing guild setup and configuration
@@ -29,16 +30,11 @@ export class GuildSetupService {
   public async ensureGuildSetup(guildId: string, guildName?: string): Promise<boolean> {
     try {
       // Check if setup already exists for this guild
-      let setup = await prisma.setup.findUnique({ where: { guildId } });
+      let setup = await safeFindSetupByGuildId(guildId);
       
       if (!setup) {
         // Auto-bootstrap setup with radar enabled
-        setup = await prisma.setup.create({
-          data: {
-            guildId,
-            radarEnabled: true,
-          },
-        });
+        setup = await safeCreateSetup(guildId, true);
         
         if (guildName) {
           console.log(`✅ Auto-setup created for guild: ${guildName} (${guildId})`);
@@ -65,7 +61,7 @@ export class GuildSetupService {
    */
   public async isRadarEnabled(guildId: string): Promise<boolean> {
     try {
-      const setup = await prisma.setup.findUnique({ where: { guildId } });
+      const setup = await safeFindSetupByGuildId(guildId);
       return setup?.radarEnabled ?? false;
     } catch (error) {
       console.warn(`⚠️ Failed to check radar status for guild ${guildId}:`, error);

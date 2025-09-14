@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { safeFindArchiveByOriginalInsultId } from '../queries/archives.js';
 import { getShortTime } from '../utils/time.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 
@@ -35,7 +36,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const results: Result[] = [];
 
   for (const id of ids) {
-    const found = await (prisma as any).archive.findUnique({ where: { originalInsultId: id } });
+    const found = await safeFindArchiveByOriginalInsultId(id);
     if (!found) {
       results.push({ kind: 'not_found', id });
       continue;

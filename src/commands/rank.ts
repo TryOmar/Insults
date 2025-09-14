@@ -3,28 +3,22 @@ import { prisma } from '../database/client.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { BlameButton } from '../utils/BlameButton.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { safeGroupByUserId, safeGetDistinctUserCount, safeFindUsersByIds } from '../queries/users.js';
 
 const PAGE_SIZE = 10;
 
 async function fetchRankData(guildId: string, page: number, pageSize: number): Promise<PaginationData<{ userId: string; points: number; username: string }>> {
-  const [totalCount, rows] = await Promise.all([
-    prisma.insult.groupBy({ by: ['userId'], where: { guildId } }).then(rows => rows.length),
-    prisma.insult.groupBy({
-      by: ['userId'],
-      where: { guildId },
-      _count: { userId: true },
-      orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    })
+  const [totalCount, allRows] = await Promise.all([
+    safeGetDistinctUserCount(guildId),
+    safeGroupByUserId(guildId)
   ]);
+
+  // Apply pagination to the grouped results
+  const rows = allRows.slice((page - 1) * pageSize, page * pageSize);
 
   // Fetch usernames for all users
   const userIds = rows.map(row => row.userId);
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, username: true }
-  });
+  const users = await safeFindUsersByIds(userIds);
 
   const userMap = new Map(users.map(u => [u.id, u.username]));
 

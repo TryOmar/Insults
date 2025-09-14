@@ -1,5 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, userMention, MessageFlags, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { safeCountArchives, safeFindArchivesWithPagination } from '../queries/archives.js';
+import { safeFindUsersByIds } from '../queries/users.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
@@ -32,30 +34,14 @@ type ArchiveFilter = {
 };
 
 async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: number): Promise<PaginationData<any>> {
-  let where: any = { guildId: filter.guildId };
-  if (filter.userId && filter.role) {
-    if (filter.role === 'insulted') where.userId = filter.userId;
-    else if (filter.role === 'blamer') where.blamerId = filter.userId;
-    else if (filter.role === 'unblamer') where.unblamerId = filter.userId;
-  } else if (filter.userId) {
-    where = {
-      guildId: filter.guildId,
-      OR: [
-        { userId: filter.userId },
-        { blamerId: filter.userId },
-        { unblamerId: filter.userId },
-      ],
-    };
-  }
+  const conditions = {
+    userId: filter.userId || undefined,
+    role: filter.role || undefined,
+  };
 
   const [totalCount, entries] = await Promise.all([
-    (prisma as any).archive.count({ where }),
-    (prisma as any).archive.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    })
+    safeCountArchives(filter.guildId, conditions),
+    safeFindArchivesWithPagination(filter.guildId, page, pageSize, conditions),
   ]);
 
   // Fetch usernames for all users involved
@@ -65,11 +51,7 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
     ...entries.map((e: any) => e.unblamerId)
   ])];
   
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, username: true }
-  });
-  
+  const users = await safeFindUsersByIds(userIds);
   const userMap = new Map(users.map(u => [u.id, u.username]));
 
   const items = entries.map((e: any) => [

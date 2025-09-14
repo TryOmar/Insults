@@ -1,15 +1,9 @@
 import { EmbedBuilder, userMention } from 'discord.js';
-import { prisma } from '../database/client.js';
 import { renderTable, TableConfig } from './tableRenderer.js';
+import { safeGetLeaderboardData } from '../queries/leaderboard.js';
 
 export async function buildLeaderboardEmbed(guildId: string): Promise<EmbedBuilder | null> {
-  const rows = await prisma.insult.groupBy({
-    by: ['userId'],
-    where: { guildId },
-    _count: { userId: true },
-    orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
-    take: 10,
-  });
+  const rows = await safeGetLeaderboardData(guildId, 10);
 
   if (rows.length === 0) return null;
 

@@ -6,6 +6,10 @@ import { PaginationManager, createStandardCustomId, parseStandardCustomId, Pagin
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { safeGroupInsultsByText } from '../queries/insults.js';
+import { safeGetDistinctUserCount, safeFindUsersByIds, safeFindUserById } from '../queries/users.js';
+import { safeFindInsultsWithPagination, safeCountInsultsWithConditions } from '../queries/insults.js';
+import { withDatabaseErrorHandling, getDatabaseErrorMessage } from '../utils/databaseErrorHandler.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
 
@@ -26,46 +30,50 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const userOpt = interaction.options.getUser('user', false);
   const scope: HistoryScope = { guildId, userId: userOpt?.id ?? null };
   
-  const paginationManager = createHistoryPaginationManager();
-  await paginationManager.handleInitialCommand(interaction, scope);
+  try {
+    const paginationManager = createHistoryPaginationManager();
+    await paginationManager.handleInitialCommand(interaction, scope);
+  } catch (error) {
+    console.error('Error in history command:', error);
+    // Try to send a user-friendly error message if the interaction is still valid
+    try {
+      await safeInteractionReply(interaction, {
+        content: getDatabaseErrorMessage(error),
+        flags: MessageFlags.Ephemeral
+      });
+    } catch (replyError) {
+      console.error('Failed to send error response:', replyError);
+    }
+  }
 }
 
 // Export with spam protection
 export const execute = withSpamProtection(executeCommand);
 
 async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: number): Promise<PaginationData<any>> {
-  try {
-    const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
+  return withDatabaseErrorHandling(async () => {
+    const conditions = scope.userId ? { userId: scope.userId } : {};
 
     // Reduce concurrent database calls to avoid overwhelming the connection pool
     // First, get the main data we need
     const [totalCount, entries] = await Promise.all([
-      prisma.insult.count({ where }),
-      prisma.insult.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
+      safeCountInsultsWithConditions(scope.guildId, conditions),
+      safeFindInsultsWithPagination(scope.guildId, page, pageSize, conditions, 'desc'),
     ]);
 
     // Then get additional data sequentially to reduce load
-    const distinctUsers = await prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length);
-    const distinctInsults = await prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } });
-    const targetUser = scope.userId ? await prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : null;
+    const distinctUsers = await safeGetDistinctUserCount(scope.guildId);
+    const distinctInsults = await safeGroupInsultsByText(scope.guildId, scope.userId || undefined);
+    const targetUser = scope.userId ? await safeFindUserById(scope.userId) : null;
 
     // Fetch blamer usernames
     const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
-    const blamers = uniqueBlamerIds.length
-      ? await prisma.user.findMany({ where: { id: { in: uniqueBlamerIds } }, select: { id: true, username: true } })
-      : [];
+    const blamers = uniqueBlamerIds.length ? await safeFindUsersByIds(uniqueBlamerIds) : [];
     const blamerMap = new Map(blamers.map((u) => [u.id, u.username]));
 
     // Fetch insulted user usernames
     const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
-    const insultedUsers = uniqueInsultedIds.length
-      ? await prisma.user.findMany({ where: { id: { in: uniqueInsultedIds } }, select: { id: true, username: true } })
-      : [];
+    const insultedUsers = uniqueInsultedIds.length ? await safeFindUsersByIds(uniqueInsultedIds) : [];
     const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
 
     // Build distinct insults summary with counts using the formatter
@@ -94,14 +102,7 @@ async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: num
       formattedInsults: string;
       targetUsername: string | null;
     };
-  } catch (error) {
-    // Check if this is a database connection error
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
-      throw new Error('Database connection failed. Please try again later.');
-    }
-    // Re-throw other errors
-    throw error;
-  }
+  });
 }
 
 function buildHistoryEmbed(data: PaginationData<any> & {

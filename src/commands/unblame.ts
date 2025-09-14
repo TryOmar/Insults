@@ -1,5 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { safeFindInsultById } from '../queries/insults.js';
+import { safeFindArchiveByOriginalInsultId, safeCreateArchive } from '../queries/archives.js';
 import { getShortTime } from '../utils/time.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
@@ -43,10 +45,10 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const results: Result[] = [];
 
   for (const id of ids) {
-    const found = await prisma.insult.findUnique({ where: { id } });
+    const found = await safeFindInsultById(id);
     if (!found) {
       // Check if it's already archived
-      const archived = await prisma.archive.findUnique({ where: { originalInsultId: id } });
+      const archived = await safeFindArchiveByOriginalInsultId(id);
       if (archived) {
         results.push({ kind: 'not_found', id }); // Treat as not found since it's already processed
         continue;
@@ -70,21 +72,21 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
     // Move to Archive first, then delete
     try {
-    await prisma.$transaction([
-      (prisma as any).archive.create({
-        data: {
-          originalInsultId: found.id, // Store the original insult ID
-          guildId: found.guildId,
-          userId: found.userId,
-          blamerId: found.blamerId,
-          insult: found.insult,
-          note: found.note ?? null,
-          createdAt: new Date(found.createdAt),
-          unblamerId: invokerId,
-        }
-      }),
-      prisma.insult.delete({ where: { id } }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "Archive" ("originalInsultId", "guildId", "userId", "blamerId", "insult", "note", "createdAt", "unblamerId") 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        found.id,
+        found.guildId,
+        found.userId,
+        found.blamerId,
+        found.insult,
+        found.note ?? null,
+        new Date(found.createdAt),
+        invokerId
+      );
+      await tx.insult.delete({ where: { id } });
+    });
     results.push({ kind: 'deleted', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
     } catch (error: any) {
       // Handle unique constraint violation (already archived)

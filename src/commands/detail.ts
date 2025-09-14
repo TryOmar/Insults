@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { safeFindInsultById } from '../queries/insults.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 
@@ -21,7 +22,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // First check active insults
-  let record = await prisma.insult.findUnique({ where: { id, guildId } });
+  let record = await safeFindInsultById(id, guildId);
   let isArchived = false;
 
   // If not found in active insults, check archived insults by original insult ID

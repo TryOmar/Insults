@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { safeUpsertSetup } from '../queries/setup.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 
 export const data = new SlashCommandBuilder()
@@ -20,14 +21,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const enabled = interaction.options.getBoolean('enabled', true);
 
-  await prisma.setup.upsert({
-    where: { guildId: interaction.guildId },
-    update: ({ radarEnabled: enabled } as any),
-    create: ({
-      guildId: interaction.guildId,
-      radarEnabled: enabled,
-    } as any),
-  });
+  await safeUpsertSetup(interaction.guildId, enabled);
 
   await interaction.reply({ content: `Radar is now ${enabled ? 'enabled' : 'disabled'} for this server.`, flags: MessageFlags.Ephemeral });
 }

@@ -1,6 +1,8 @@
 import { EmbedBuilder, User, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
+import { safeGroupInsultsByText, safeCountInsultsWithConditions } from '../queries/insults.js';
+import { safeUpsertUser, safeFindUserById } from '../queries/users.js';
 
 export interface BlameParams {
   guildId: string;
@@ -147,17 +149,8 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 
   // Allow spaces inside the insult phrase; no strict single-token rule
 
-  await prisma.user.upsert({
-    where: { id: target.id },
-    update: { username: target.username },
-    create: { id: target.id, username: target.username },
-  });
-
-  await prisma.user.upsert({
-    where: { id: blamer.id },
-    update: { username: blamer.username },
-    create: { id: blamer.id, username: blamer.username },
-  });
+  await safeUpsertUser(target.id, target.username);
+  await safeUpsertUser(blamer.id, blamer.username);
 
   const record = await prisma.insult.create({
     data: {
@@ -169,14 +162,9 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     },
   });
 
-  const totalBlames = await prisma.insult.count({ where: { guildId, userId: target.id } });
-  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
-  const grouped = await prisma.insult.groupBy({
-    by: ['insult'],
-    where: { guildId, userId: target.id },
-    _count: { insult: true },
-    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-  });
+  const totalBlames = await safeCountInsultsWithConditions(guildId, { userId: target.id });
+  const insultCount = await safeCountInsultsWithConditions(guildId, { insult });
+  const grouped = await safeGroupInsultsByText(guildId, target.id);
   const distinctSummary = formatInsultFrequencyPairs(grouped);
 
   const publicEmbed = buildBlameEmbed('public', {
@@ -237,19 +225,14 @@ export async function buildBlameEmbedFromRecord(type: BlameEmbedType, record: Bl
   const { guildId, userId, blamerId, insult, note, createdAt, id } = record;
 
   const [targetUser, blamerUser] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } }),
-    prisma.user.findUnique({ where: { id: blamerId }, select: { id: true, username: true } }),
+    safeFindUserById(userId),
+    safeFindUserById(blamerId),
   ]);
 
-  const totalBlames = await prisma.insult.count({ where: { guildId, userId } });
-  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
+  const totalBlames = await safeCountInsultsWithConditions(guildId, { userId });
+  const insultCount = await safeCountInsultsWithConditions(guildId, { insult });
 
-  const grouped = await prisma.insult.groupBy({
-    by: ['insult'],
-    where: { guildId, userId },
-    _count: { insult: true },
-    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
-  });
+  const grouped = await safeGroupInsultsByText(guildId, userId);
   const distinctSummary = formatInsultFrequencyPairs(grouped);
 
   return buildBlameEmbed(type, {
