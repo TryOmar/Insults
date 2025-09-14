@@ -9,11 +9,13 @@ import {
   UserSelectMenuInteraction,
   ModalSubmitInteraction,
   User,
-  MessageFlags
+  MessageFlags,
+  GuildMember
 } from 'discord.js';
 import { blameUser, BlameParams } from '../services/blame.js';
-import { isDiscordAPIError, isInteractionInvalidError } from './interactionValidation.js';
+import { isDiscordAPIError, isInteractionInvalidError, getGuildMember } from './interactionValidation.js';
 import { logGameplayAction } from './channelLogging.js';
+import { canUseBotCommands } from './roleValidation.js';
 
 export class BlameButton {
   static createBlameButton(): ButtonBuilder {
@@ -169,6 +171,47 @@ export class BlameButton {
     const insult = interaction.fields.getTextInputValue('blame:insult');
     const note = interaction.fields.getTextInputValue('blame:note') || null;
 
+    // Check role permissions
+    let member: any = null;
+    if (interaction.member instanceof GuildMember) {
+      member = interaction.member;
+    } else if (interaction.member && typeof interaction.member === 'object' && 'user' in interaction.member) {
+      try {
+        member = await interaction.guild!.members.fetch(interaction.member.user.id);
+      } catch (error) {
+        console.log('Failed to fetch member for role validation:', error);
+      }
+    }
+    
+    if (!member) {
+      try {
+        await interaction.reply({ 
+          content: 'Unable to verify your permissions.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+          console.log('Failed to reply to modal submit (no member):', error);
+        }
+      }
+      return;
+    }
+
+    const roleCheck = await canUseBotCommands(member, true); // true = mutating command
+    if (!roleCheck.allowed) {
+      try {
+        await interaction.reply({ 
+          content: roleCheck.reason || 'You do not have permission to use this command.', 
+          flags: MessageFlags.Ephemeral
+        });
+      } catch (error) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+          console.log('Failed to reply to modal submit (no permission):', error);
+        }
+      }
+      return;
+    }
+
     // Get the target user from the guild
     const targetUser = await interaction.guild!.members.fetch(targetUserId).catch(() => null);
     if (!targetUser) {
@@ -192,7 +235,8 @@ export class BlameButton {
       blamer: interaction.user,
       insultRaw: insult,
       noteRaw: note,
-      dmTarget: true
+      dmTarget: true,
+      guild: interaction.guild!
     };
 
     try {
