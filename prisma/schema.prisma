@@ -34,9 +34,16 @@ model Insult {
 }
 
 model Setup {
-  guildId      String   @id
-  radarEnabled Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  guildId         String   @id
+  radarEnabled    Boolean  @default(false)
+  blamerRoleId    String?  // Role that can use mutating commands
+  frozenRoleId    String?  // Role that blocks all bot commands
+  insulterRoleId  String?  // Role auto-assigned to top insulter
+  insulterDays    Int      @default(0) // Time window for insulter role (0 = all-time)
+  monitorChannelId String? // Channel for system notifications
+  insultsChannelId String? // Channel for gameplay action logs
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 }
 
 model Archive {

@@ -81,6 +81,13 @@ const COMMAND_INFO = {
     userStory: '**User Story:** As a user, I want to clean up my DM conversation with the bot by removing a specific number of messages the bot has sent to me.',
     details: '**Parameters:**\n• `count` (optional) - Number of bot messages to clear (default: 50, max: 100)\n\n**Usage:**\n• Can only be used in private messages (DMs) with the bot\n• Clears the most recent bot messages first\n• Handles message age limits gracefully\n• Shows count of successfully deleted messages\n\n**Features:**\n• Customizable message count (1-100)\n• Individual deletion for reliability\n• Error handling for permission issues\n• Confirmation of deletion count\n• Smart fetching to ensure enough bot messages are found'
   },
+  config: {
+    name: 'config',
+    description: 'Configure bot settings for this server',
+    usage: '`/config action:<choice> [role/channel/days]`',
+    userStory: '**User Story:** As a server administrator, I want to configure role-based permissions and logging channels so I can control who can use the bot and where notifications are sent.',
+    details: '**Actions:**\n• `Set Blamer Role` + @role - Set role for mutating commands\n• `Set Frozen Role` + @role - Set role that blocks all commands\n• `Set Insulter Role` + @role - Set auto-assigned top insulter role\n• `Set Insulter Days` + days - Set time window for insulter calculation\n• `Set Monitor Channel` + #channel - Set system notifications channel\n• `Set Insults Channel` + #channel - Set gameplay action logging channel\n• `View Configuration` - View current configuration\n\n**Permissions:**\n• Requires "Manage Server" permission\n\n**Features:**\n• Role-based access control for commands\n• Automatic top insulter role assignment\n• Configurable logging channels\n• Time-based insulter calculations\n• Easy configuration management'
+  },
   'anti-spam': {
     name: 'anti-spam',
     description: 'Anti-spam system information (NOT A COMMAND)',
@@ -109,7 +116,7 @@ function createMainHelpEmbed(): EmbedBuilder {
       },
       {
         name: '⚙️ Management Commands',
-        value: '`/radar <enabled>` - Toggle automatic insult detection\n`/archive [@user] [role]` - Show archived blame records\n`/revert <id>` - Restore archived blames back into active records\n`/clear [count]` - Clear DM messages sent by the bot (DM only)',
+        value: '`/config action:<choice> [options]` - Configure bot settings\n`/radar <enabled>` - Toggle automatic insult detection\n`/archive [@user] [role]` - Show archived blame records\n`/revert <id>` - Restore archived blames back into active records\n`/clear [count]` - Clear DM messages sent by the bot (DM only)',
         inline: false
       }
     );

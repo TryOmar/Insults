@@ -2,6 +2,7 @@ import { EmbedBuilder, User, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 import { validateInsultInput, validateNoteInput } from '../utils/insultUtils.js';
+import { updateInsulterRole } from './insulterRole.js';
 
 export interface BlameParams {
   guildId: string;
@@ -11,6 +12,7 @@ export interface BlameParams {
   insultRaw: string;
   noteRaw?: string | null;
   dmTarget?: boolean;
+  guild?: any; // Guild object for role updates
 }
 
 export interface BlameSuccess {
@@ -99,7 +101,7 @@ export function buildBlameEmbed(type: BlameEmbedType, options: {
 }
 
 export async function blameUser(params: BlameParams): Promise<{ ok: true; data: BlameSuccess } | { ok: false; error: BlameError }> {
-  const { guildId, guildName, target, blamer, insultRaw, noteRaw, dmTarget = true } = params;
+  const { guildId, guildName, target, blamer, insultRaw, noteRaw, dmTarget = true, guild } = params;
 
   if (!guildId) {
     return { ok: false, error: { message: 'This command can only be used in a server.' } };
@@ -194,6 +196,16 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
       dmSent = true;
     } catch {
       dmSent = false;
+    }
+  }
+
+  // Update insulter role if guild is provided
+  if (guild) {
+    try {
+      await updateInsulterRole(guild);
+    } catch (error) {
+      console.error('Failed to update insulter role:', error);
+      // Don't fail the blame operation if role update fails
     }
   }
 

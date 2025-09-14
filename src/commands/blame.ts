@@ -2,6 +2,8 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from '
 import { blameUser } from '../services/blame.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { canUseBotCommands } from '../utils/roleValidation.js';
+import { logGameplayAction } from '../utils/channelLogging.js';
 
 export const data = new SlashCommandBuilder()
   .setName('blame')
@@ -31,6 +33,27 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Check role permissions
+  const member = interaction.member;
+  if (!member || typeof member === 'string') {
+    const success = await safeInteractionReply(interaction, { 
+      content: 'Unable to verify your permissions.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
+    return;
+  }
+
+  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
+  if (!roleCheck.allowed) {
+    const success = await safeInteractionReply(interaction, { 
+      content: roleCheck.reason || 'You do not have permission to use this command.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
+    return;
+  }
+
   const target = interaction.options.getUser('user', true);
   const insultRaw = interaction.options.getString('insult', true);
   const noteRaw = interaction.options.getString('note', false);
@@ -43,6 +66,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     insultRaw,
     noteRaw,
     dmTarget: true,
+    guild: interaction.guild,
   });
 
   if (!result.ok) {
@@ -59,6 +83,16 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     embeds: [result.data.publicEmbed] 
   });
   if (!success) return;
+
+  // Log the gameplay action
+  await logGameplayAction(interaction, {
+    action: 'blame',
+    target,
+    blamer: interaction.user,
+    insult: insultRaw,
+    note: noteRaw || undefined,
+    blameId: result.data.insultId
+  });
 
   try {
     const sent = await interaction.fetchReply();

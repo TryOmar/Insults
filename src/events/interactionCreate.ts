@@ -11,6 +11,7 @@ import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as radar from '../commands/radar.js';
 import * as clear from '../commands/clear.js';
+import * as config from '../commands/config.js';
 import { BlameButton } from '../utils/BlameButton.js';
 
 
@@ -62,6 +63,7 @@ export async function handleInteraction(interaction: Interaction) {
       insults: insults.execute,
       radar: radar.execute,
       clear: clear.execute,
+      config: config.execute,
     };
 
     const handler = map[interaction.commandName];

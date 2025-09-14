@@ -6,6 +6,7 @@ import { PaginationManager, createStandardCustomId, parseStandardCustomId, Pagin
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { canUseBotCommands } from '../utils/roleValidation.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
 
@@ -20,6 +21,19 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // Check role permissions
+  const member = interaction.member;
+  if (!member || typeof member === 'string') {
+    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const roleCheck = await canUseBotCommands(member, false); // false = non-mutating command
+  if (!roleCheck.allowed) {
+    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
     return;
   }
 

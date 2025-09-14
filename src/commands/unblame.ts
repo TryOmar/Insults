@@ -3,6 +3,9 @@ import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { canUseBotCommands } from '../utils/roleValidation.js';
+import { logGameplayAction } from '../utils/channelLogging.js';
+import { updateInsulterRoleAfterCommand } from '../utils/insulterRoleUpdate.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
@@ -15,6 +18,37 @@ type Page = { embeds: EmbedBuilder[] };
 const sessionStore = new Map<string, { pages: Page[]; currentPage: number }>();
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    const success = await safeInteractionReply(interaction, { 
+      content: 'This command can only be used in a server.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
+    return;
+  }
+
+  // Check role permissions
+  const member = interaction.member;
+  if (!member || typeof member === 'string') {
+    const success = await safeInteractionReply(interaction, { 
+      content: 'Unable to verify your permissions.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
+    return;
+  }
+
+  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
+  if (!roleCheck.allowed) {
+    const success = await safeInteractionReply(interaction, { 
+      content: roleCheck.reason || 'You do not have permission to use this command.', 
+      flags: MessageFlags.Ephemeral 
+    });
+    if (!success) return;
+    return;
+  }
+
   const raw = interaction.options.getString('id', true);
   const invokerId = interaction.user.id;
 
@@ -32,8 +66,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Remove duplicate IDs to prevent unique constraint violations
   const ids = [...new Set(rawIds)];
 
-  const member = await interaction.guild?.members.fetch(invokerId).catch(() => null);
-  const isAdmin = member?.permissions.has(PermissionFlagsBits.Administrator) ?? false;
+  const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
   type Result = 
     | { kind: 'deleted'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
@@ -86,6 +119,15 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       prisma.insult.delete({ where: { id } }),
     ]);
     results.push({ kind: 'deleted', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+    
+    // Log the gameplay action
+    await logGameplayAction(interaction, {
+      action: 'unblame',
+      target: { id: found.userId } as any, // We'll need to fetch the user if needed
+      blamer: { id: found.blamerId } as any,
+      unblamer: interaction.user,
+      blameId: id
+    });
     } catch (error: any) {
       // Handle unique constraint violation (already archived)
       if (error.code === 'P2002' && error.meta?.target?.includes('originalInsultId')) {
@@ -166,6 +208,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const sent = await interaction.fetchReply();
   sessionStore.set(sent.id, { pages, currentPage: initialPage });
   await interaction.editReply({ components: buildButtons(initialPage, pages.length) });
+
+  // Update insulter role after successful unblame operations
+  if (deleted.length > 0) {
+    await updateInsulterRoleAfterCommand(interaction.guild);
+  }
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {

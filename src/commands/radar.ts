@@ -1,6 +1,8 @@
 import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { canUseBotCommands } from '../utils/roleValidation.js';
+import { logGameplayAction } from '../utils/channelLogging.js';
 
 export const data = new SlashCommandBuilder()
   .setName('radar')
@@ -18,6 +20,19 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Check role permissions
+  const member = interaction.member;
+  if (!member || typeof member === 'string') {
+    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
+  if (!roleCheck.allowed) {
+    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
   const enabled = interaction.options.getBoolean('enabled', true);
 
   await prisma.setup.upsert({
@@ -27,6 +42,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       guildId: interaction.guildId,
       radarEnabled: enabled,
     } as any),
+  });
+
+  // Log the gameplay action
+  await logGameplayAction(interaction, {
+    action: 'radar',
+    blamer: interaction.user
   });
 
   await interaction.reply({ content: `Radar is now ${enabled ? 'enabled' : 'disabled'} for this server.`, flags: MessageFlags.Ephemeral });

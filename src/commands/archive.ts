@@ -4,6 +4,7 @@ import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { canUseBotCommands } from '../utils/roleValidation.js';
 
 const PAGE_SIZE = 10;
 
@@ -148,6 +149,19 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // Check role permissions
+  const member = interaction.member;
+  if (!member || typeof member === 'string') {
+    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
+  if (!roleCheck.allowed) {
+    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
     return;
   }
 
