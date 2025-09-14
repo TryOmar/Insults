@@ -7,7 +7,7 @@ export const data = new SlashCommandBuilder()
   .setName('blame')
   .setDescription('Record an insult against a user')
   .addUserOption((opt) =>
-    opt.setName('user').setDescription('The insulted user').setRequired(true)
+    opt.setName('user').setDescription('User who insulted').setRequired(true)
   )
   .addStringOption((opt) =>
     opt
