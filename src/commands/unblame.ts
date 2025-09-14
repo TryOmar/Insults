@@ -127,8 +127,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         { name: '**Blame ID**', value: `#${id}`, inline: true },
         { name: '**Insult**', value: found.insult, inline: true },
         { name: '**Note**', value: found.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(found.userId), inline: true },
+        { name: '**Insulter**', value: userMention(found.userId), inline: false },
         { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+        { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
         { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
       )
       .setColor(0xE67E22)
@@ -158,8 +159,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
               { name: '**Blame ID**', value: `#${id}`, inline: true },
               { name: '**Insult**', value: found.insult, inline: true },
               { name: '**Note**', value: found.note ?? '—', inline: false },
-              { name: '**Insulter**', value: userMention(found.userId), inline: true },
+              { name: '**Insulter**', value: userMention(found.userId), inline: false },
               { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+              { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
               { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
             )
             .setColor(0xE67E22)
@@ -202,6 +204,42 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     if (otherIds) otherParts.push(`Not your blames: ${otherIds}`);
   }
 
+  // Check if all unblame attempts were denied
+  if (deleted.length === 0) {
+    // Collect unique reasons for denial
+    const reasons: string[] = [];
+    if (notFound.length > 0) {
+      reasons.push(`**Not Found** (${notFound.length}): ${notFound.map(n => `#${n.id}`).join(', ')}`);
+    }
+    if (forbidden.length > 0) {
+      const selfNotBlamer = forbidden.filter(f => f.reason === 'self_not_blamer');
+      const notOwner = forbidden.filter(f => f.reason === 'not_owner');
+      
+      if (selfNotBlamer.length > 0) {
+        reasons.push(`**Cannot unblame yourself** (${selfNotBlamer.length}): ${selfNotBlamer.map(f => `#${f.id}`).join(', ')}`);
+      }
+      if (notOwner.length > 0) {
+        reasons.push(`**Not your blames** (${notOwner.length}): ${notOwner.map(f => `#${f.id}`).join(', ')}`);
+      }
+    }
+
+    // Send a single professional response with all denial reasons
+    const deniedEmbed = new EmbedBuilder()
+      .setTitle('❌ Unblame Denied')
+      .setDescription('None of the requested blame records could be deleted.')
+      .addFields(
+        { name: '**Reasons**', value: reasons.join('\n\n'), inline: false }
+      )
+      .setColor(0xE74C3C)
+      .setTimestamp();
+
+    const success = await safeInteractionReply(interaction, { 
+      embeds: [deniedEmbed]
+    });
+    if (!success) return;
+    return;
+  }
+
   // Build pages: summary + detail pages for deleted items
   const pages: Page[] = [];
   
@@ -224,6 +262,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         { name: '**Note**', value: d.note ?? '—', inline: false },
         { name: '**Insulter**', value: userMention(d.userId), inline: true },
         { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
+        { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
         { name: '**When**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
       )
       .setColor(0xE67E22)
