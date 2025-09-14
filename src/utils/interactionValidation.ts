@@ -1,9 +1,40 @@
-import { Interaction, ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
+import { Interaction, ChatInputCommandInteraction, ButtonInteraction, GuildMember, APIInteractionGuildMember } from 'discord.js';
 
 /**
- * Checks if a Discord interaction has expired
- * Discord interactions expire after 3 seconds, we add a small buffer
+ * Safely gets a GuildMember from an interaction, fetching it if necessary
+ * Returns null if the member cannot be obtained
  */
+export async function getGuildMember(interaction: ChatInputCommandInteraction | ButtonInteraction): Promise<GuildMember | null> {
+  if (!interaction.guildId) {
+    return null;
+  }
+
+  const member = interaction.member;
+  if (!member) {
+    return null;
+  }
+
+  // If it's already a GuildMember, return it
+  if (member instanceof GuildMember) {
+    return member;
+  }
+
+  // If it's an APIInteractionGuildMember, we need to fetch the full GuildMember
+  if (typeof member === 'object' && 'user' in member) {
+    try {
+      const guild = interaction.guild;
+      if (!guild) {
+        return null;
+      }
+      return await guild.members.fetch(member.user.id);
+    } catch (error) {
+      console.error('Failed to fetch GuildMember:', error);
+      return null;
+    }
+  }
+
+  return null;
+}
 export function isInteractionExpired(interaction: Interaction): boolean {
   const now = Date.now();
   const interactionTime = interaction.createdTimestamp;

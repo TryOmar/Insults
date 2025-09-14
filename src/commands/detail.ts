@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
+import { getGuildMember } from '../utils/interactionValidation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('detail')
@@ -22,8 +23,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
     return;
   }

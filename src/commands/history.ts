@@ -5,7 +5,7 @@ import { getShortTime } from '../utils/time.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
-import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
 
 type HistoryScope = { guildId: string; userId?: string | null };
@@ -25,8 +25,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
     return;
   }

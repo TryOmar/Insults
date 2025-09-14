@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
-import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
@@ -29,8 +29,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     const success = await safeInteractionReply(interaction, { 
       content: 'Unable to verify your permissions.', 
       flags: MessageFlags.Ephemeral 
@@ -66,7 +66,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Remove duplicate IDs to prevent unique constraint violations
   const ids = [...new Set(rawIds)];
 
-  const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+  const isAdmin = typeof member.permissions === 'string' ? false : member.permissions.has(PermissionFlagsBits.Administrator);
 
   type Result = 
     | { kind: 'deleted'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }

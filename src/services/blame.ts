@@ -19,6 +19,7 @@ export interface BlameSuccess {
   publicEmbed: EmbedBuilder;
   dmEmbed: EmbedBuilder;
   dmSent: boolean;
+  insultId: number;
 }
 
 export interface BlameError {
@@ -209,7 +210,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     }
   }
 
-  return { ok: true, data: { publicEmbed, dmEmbed, dmSent } };
+  return { ok: true, data: { publicEmbed, dmEmbed, dmSent, insultId: record.id } };
 }
 
 

@@ -5,6 +5,7 @@ import { withSpamProtection } from '../utils/commandWrapper.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
 import { updateInsulterRoleAfterCommand } from '../utils/insulterRoleUpdate.js';
+import { getGuildMember } from '../utils/interactionValidation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('revert')
@@ -24,8 +25,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
     return;
   }
@@ -45,7 +46,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+  const isAdmin = typeof member.permissions === 'string' ? false : member.permissions.has(PermissionFlagsBits.Administrator);
 
   type Result = 
     | { kind: 'restored'; id: number; originalId: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }

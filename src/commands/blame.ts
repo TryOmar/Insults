@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { blameUser } from '../services/blame.js';
-import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
@@ -34,8 +34,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     const success = await safeInteractionReply(interaction, { 
       content: 'Unable to verify your permissions.', 
       flags: MessageFlags.Ephemeral 

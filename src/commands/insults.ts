@@ -3,7 +3,7 @@ import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
-import { safeInteractionReply } from '../utils/interactionValidation.js';
+import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
 import { validateInsultInput } from '../utils/insultUtils.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
@@ -38,8 +38,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Check role permissions
-  const member = interaction.member;
-  if (!member || typeof member === 'string') {
+  const member = await getGuildMember(interaction);
+  if (!member) {
     const success = await safeInteractionReply(interaction, { 
       content: 'Unable to verify your permissions.', 
       flags: MessageFlags.Ephemeral 
