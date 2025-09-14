@@ -9,7 +9,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 
 client.once('clientReady', async () => {
   await onReady(client);
-  await registerAllCommands(client.guilds.cache);
+  //await registerAllCommands(client.guilds.cache); // Uncomment this to register commands
 });
 client.on('interactionCreate', handleInteraction);
 client.on('messageCreate', handleMessage);
