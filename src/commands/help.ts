@@ -28,9 +28,9 @@ const COMMAND_INFO = {
   rank: {
     name: 'rank',
     description: 'Show the insult leaderboard',
-    usage: '`/rank`',
+    usage: '`/rank [days]`',
     userStory: '**User Story:** As a server member, I want to see who has been insulted the most so we can understand the social dynamics and patterns.',
-    details: '**Features:**\n• Shows users ranked by total insults received\n• Displays points and usernames\n• Paginated for large servers\n• Includes quick blame button for easy recording\n• Ties broken by earliest first insult'
+    details: '**Parameters:**\n• `days` (optional) - Number of calendar days to look back (0-3650)\n\n**Time Periods:**\n• `/rank` or `/rank days:0` - All-time leaderboard\n• `/rank days:1` - Today only (from midnight today → now)\n• `/rank days:7` - Last 7 full calendar days (including today)\n• `/rank days:30` - Last 30 full calendar days (including today)\n\n**Features:**\n• Shows users ranked by total insults received\n• Displays points and usernames with time period in title\n• Paginated for large servers\n• Includes quick blame button for easy recording\n• Ties broken by earliest first insult\n• **Calendar Days:** Uses full calendar days, not rolling 24-hour periods\n• **Default:** Shows all-time data if no arguments provided'
   },
   history: {
     name: 'history',
