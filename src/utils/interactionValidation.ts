@@ -40,8 +40,8 @@ export function isInteractionExpired(interaction: Interaction): boolean {
   const interactionTime = interaction.createdTimestamp;
   const timeSinceCreation = now - interactionTime;
   
-  // Discord interactions expire after 5 seconds, be more conservative
-  return timeSinceCreation > 5000; // 5 seconds
+  // Discord interactions expire after 10 seconds, be more conservative
+  return timeSinceCreation > 10000; // 10 seconds
 }
 
 /**
