@@ -27,7 +27,7 @@ export async function registerAllCommands(guilds?: Map<string, any>) {
   try {
     // First, get and delete existing global commands
     console.log('🧹 Cleaning up existing global commands...');
-    const existingCommands = await rest.get(Routes.applicationCommands(config.clientId));
+    const existingCommands = (await rest.get(Routes.applicationCommands(config.clientId))) as any[];
     console.log(`Found ${existingCommands.length} existing global commands`);
     
     if (existingCommands.length > 0) {
@@ -36,7 +36,7 @@ export async function registerAllCommands(guilds?: Map<string, any>) {
         try {
           await rest.delete(Routes.applicationCommand(config.clientId, command.id));
           console.log(`  ✅ Deleted: ${command.name}`);
-        } catch (error) {
+        } catch (error: any) {
           console.error(`  ❌ Failed to delete ${command.name}:`, error.message);
         }
       }
@@ -52,7 +52,7 @@ export async function registerAllCommands(guilds?: Map<string, any>) {
     const res = (await rest.put(route, { body: commandJson })) as unknown as any[];
     console.log(`✅ Registered GLOBAL slash commands. API response items: ${Array.isArray(res) ? res.length : 'unknown'}`);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error(`❌ Failed to register global commands:`, error.message);
     throw error;
   }
