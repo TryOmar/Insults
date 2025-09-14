@@ -158,6 +158,7 @@ export class PaginationManager<T, D = PaginationData<T>> {
       // Check if this is a Discord API error indicating the interaction is invalid
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
         console.log(`Interaction ${interaction.id} is invalid (expired or already acknowledged), skipping error response`);
+        console.log(error);
         return;
       }
       

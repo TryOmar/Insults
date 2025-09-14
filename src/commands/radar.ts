@@ -48,7 +48,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Log the gameplay action
   await logGameplayAction(interaction, {
     action: 'radar',
-    blamer: interaction.user
+    blamer: interaction.user,
+    radarEnabled: enabled
   });
 
   await interaction.reply({ content: `Radar is now ${enabled ? 'enabled' : 'disabled'} for this server.`, flags: MessageFlags.Ephemeral });

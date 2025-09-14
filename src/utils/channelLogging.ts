@@ -21,6 +21,8 @@ export interface GameplayLogData {
   // New fields for reusing existing embeds
   embed?: EmbedBuilder;
   addReactions?: boolean;
+  // Radar state
+  radarEnabled?: boolean;
 }
 
 /**
@@ -150,9 +152,12 @@ function createGameplayEmbed(data: GameplayLogData): EmbedBuilder {
       break;
 
     case 'radar':
+      const radarStatus = data.radarEnabled ? 'enabled' : 'disabled';
+      const radarEmoji = data.radarEnabled ? '🟢' : '🔴';
       embed
-        .setTitle('📡 Radar Toggled')
-        .setDescription(`**${data.blamer?.tag}** toggled automatic insult detection`);
+        .setTitle(`${radarEmoji} Radar ${radarStatus === 'enabled' ? 'Enabled' : 'Disabled'}`)
+        .setDescription(`**${data.blamer?.tag}** ${radarStatus} automatic insult detection`)
+        .setColor(data.radarEnabled ? 0x00ff00 : 0xff0000);
       break;
 
     case 'insulter-role-update':

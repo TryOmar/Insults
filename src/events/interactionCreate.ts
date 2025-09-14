@@ -159,6 +159,7 @@ export async function handleInteraction(interaction: Interaction) {
           // If it's an invalid interaction error, just log and skip
           if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
             console.log(`Button interaction ${id} is invalid (expired or already acknowledged), skipping`);
+            console.log(error);
             return;
           }
           // Re-throw other errors to be handled by the outer catch
@@ -174,12 +175,14 @@ export async function handleInteraction(interaction: Interaction) {
       // Check if this is a Discord API error indicating the interaction is invalid
       if (isDiscordAPIError(error) && isInteractionInvalidError(error)) {
         console.log(`Button interaction ${id} is invalid (expired or already acknowledged), skipping error response`);
+        console.log(error);
         return;
       }
       
       // Check if interaction has expired
       if (isInteractionExpired(button)) {
         console.log(`Button interaction ${id} has expired, skipping error response`);
+        console.log(error);
         return;
       }
       

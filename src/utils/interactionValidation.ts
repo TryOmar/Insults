@@ -123,6 +123,7 @@ export async function safeInteractionReply(
     // Check if this is a Discord API error indicating the interaction is invalid
     if (isInteractionInvalidError(error)) {
       console.log(`Interaction ${interaction.id} is invalid (expired or already acknowledged), skipping error response`);
+      console.log(error);
       return false;
     }
     
