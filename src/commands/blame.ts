@@ -91,7 +91,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     blamer: interaction.user,
     insult: insultRaw,
     note: noteRaw || undefined,
-    blameId: result.data.insultId
+    blameId: result.data.insultId,
+    embed: result.data.publicEmbed,
+    addReactions: true
   });
 
   try {

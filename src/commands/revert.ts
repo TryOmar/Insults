@@ -94,13 +94,29 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         createdAt: new Date(found.createdAt) 
       });
 
+      // Create embed for this specific revert action
+      const revertEmbed = new EmbedBuilder()
+        .setTitle(`Restored Blame #${restoredInsult.id}`)
+        .addFields(
+          { name: '**New Blame ID**', value: `#${restoredInsult.id}`, inline: true },
+          { name: '**Original ID**', value: `#${id}`, inline: true },
+          { name: '**Insult**', value: found.insult, inline: true },
+          { name: '**Note**', value: found.note ?? '—', inline: false },
+          { name: '**Insulter**', value: userMention(found.userId), inline: true },
+          { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+          { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
+        )
+        .setColor(0xF39C12)
+        .setTimestamp(new Date(found.createdAt));
+
       // Log the gameplay action
       await logGameplayAction(interaction, {
         action: 'revert',
         target: { id: found.userId } as any,
         blamer: { id: found.blamerId } as any,
         unblamer: interaction.user,
-        blameId: restoredInsult.id
+        blameId: restoredInsult.id,
+        embed: revertEmbed
       });
     } catch {
       results.push({ kind: 'failed', id });
@@ -134,13 +150,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     const embed = new EmbedBuilder()
       .setTitle(`Restored Blame #${d.id}`)
       .addFields(
-        { name: 'New ID', value: String(d.id), inline: true },
-        { name: 'Original Insult ID', value: String(d.originalId), inline: true },
-        { name: 'Insult', value: d.insult, inline: true },
-        { name: 'Note', value: d.note ?? '—', inline: false },
-        { name: 'Insulter', value: userMention(d.userId), inline: true },
-        { name: 'Blamer', value: userMention(d.blamerId), inline: true },
-        { name: 'When (original)', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
+        { name: '**New Blame ID**', value: `#${d.id}`, inline: true },
+        { name: '**Original ID**', value: `#${d.originalId}`, inline: true },
+        { name: '**Insult**', value: d.insult, inline: true },
+        { name: '**Note**', value: d.note ?? '—', inline: false },
+        { name: '**Insulter**', value: userMention(d.userId), inline: true },
+        { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
+        { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
       )
       .setColor(0xF39C12)
       .setTimestamp(new Date(d.createdAt));

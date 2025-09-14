@@ -18,6 +18,9 @@ export interface GameplayLogData {
   blameId?: number;
   newInsulter?: User;
   oldInsulter?: User;
+  // New fields for reusing existing embeds
+  embed?: EmbedBuilder;
+  addReactions?: boolean;
 }
 
 /**
@@ -52,8 +55,18 @@ export async function logGameplayAction(
       return; // Channel not found or not text-based
     }
 
-    const embed = createGameplayEmbed(data);
-    await channel.send({ embeds: [embed] });
+    const embed = data.embed || createGameplayEmbed(data);
+    const sentMessage = await channel.send({ embeds: [embed] });
+    
+    // Add reactions for blame messages if requested
+    if (data.action === 'blame' && data.addReactions) {
+      try {
+        await sentMessage.react('👍');
+        await sentMessage.react('👎');
+      } catch (error) {
+        console.error('Failed to add reactions to blame message:', error);
+      }
+    }
   } catch (error) {
     console.error('Failed to log gameplay action:', error);
   }
