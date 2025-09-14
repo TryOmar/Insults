@@ -21,13 +21,13 @@ export const data = new SlashCommandBuilder()
       .setDescription('What to configure')
       .setRequired(true)
       .addChoices(
+        { name: 'View Configuration', value: 'view' },
+        { name: 'Set Monitor Channel', value: 'monitor-channel' },
+        { name: 'Set Insults Channel', value: 'insults-channel' },
         { name: 'Set Blamer Role', value: 'blamer-role' },
         { name: 'Set Frozen Role', value: 'frozen-role' },
         { name: 'Set Insulter Role', value: 'insulter-role' },
-        { name: 'Set Insulter Days', value: 'insulter-days' },
-        { name: 'Set Monitor Channel', value: 'monitor-channel' },
-        { name: 'Set Insults Channel', value: 'insults-channel' },
-        { name: 'View Configuration', value: 'view' }
+        { name: 'Set Insulter Days', value: 'insulter-days' }
       )
   )
   .addRoleOption(option =>
