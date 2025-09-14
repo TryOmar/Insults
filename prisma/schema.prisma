@@ -8,62 +8,61 @@ datasource db {
 }
 
 model User {
-  id       String   @id
-  username String
-  insults  Insult[] @relation("UserInsults")
-  blames   Insult[] @relation("BlamerInsults")
-  archives Archive[] @relation("UserArchives")
-  blameArchives Archive[] @relation("BlamerArchives")
+  id               String    @id
+  username         String
+  blameArchives    Archive[] @relation("BlamerArchives")
   unblamerArchives Archive[] @relation("UnblamerArchives")
+  archives         Archive[] @relation("UserArchives")
+  blames           Insult[]  @relation("BlamerInsults")
+  insults          Insult[]  @relation("UserInsults")
 }
 
 model Insult {
-  id         Int      @id @default(autoincrement())
-  guildId    String
-  user       User     @relation("UserInsults", fields: [userId], references: [id])
-  userId     String
-  blamer     User     @relation("BlamerInsults", fields: [blamerId], references: [id])
-  blamerId   String
-  insult     String   @db.VarChar(100)   // unified 100-char limit
-  note       String?  @db.VarChar(1000)  // paragraphs, links, short notes
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  blamerId  String
+  insult    String   @db.VarChar(100)
+  note      String?  @db.VarChar(1000)
+  createdAt DateTime @default(now())
+  blamer    User     @relation("BlamerInsults", fields: [blamerId], references: [id])
+  user      User     @relation("UserInsults", fields: [userId], references: [id])
 
   @@index([guildId, userId])
   @@index([guildId, blamerId])
-  @@index([guildId, insult]) // Add index for text searches
+  @@index([guildId, insult])
 }
 
 model Setup {
-  guildId         String   @id
-  radarEnabled    Boolean  @default(false)
-  blamerRoleId    String?  // Role that can use mutating commands
-  frozenRoleId    String?  // Role that blocks all bot commands
-  insulterRoleId  String?  // Role auto-assigned to top insulter
-  insulterDays    Int      @default(0) // Time window for insulter role (0 = all-time)
-  monitorChannelId String? // Channel for system notifications
-  insultsChannelId String? // Channel for gameplay action logs
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
+  guildId          String   @id
+  radarEnabled     Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  blamerRoleId     String?
+  frozenRoleId     String?
+  insulterDays     Int      @default(0)
+  insulterRoleId   String?
+  insultsChannelId String?
+  monitorChannelId String?
+  updatedAt        DateTime @default(now()) @updatedAt
 }
 
 model Archive {
-  id              Int      @id @default(autoincrement())
-  originalInsultId Int      @unique // The original insult ID from the Insult table
-  guildId         String
-  user            User     @relation("UserArchives", fields: [userId], references: [id])
-  userId          String
-  blamer          User     @relation("BlamerArchives", fields: [blamerId], references: [id])
-  blamerId        String
-  insult          String   @db.VarChar(100)   // Same constraint as Insult
-  note            String?  @db.VarChar(1000)  // Same constraint as Insult
-  createdAt       DateTime
-
-  unblamer        User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
-  unblamerId      String
-  unblamedAt      DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  originalInsultId Int      @unique
+  guildId          String
+  userId           String
+  blamerId         String
+  insult           String   @db.VarChar(100)
+  note             String?  @db.VarChar(1000)
+  createdAt        DateTime
+  unblamerId       String
+  unblamedAt       DateTime @default(now())
+  blamer           User     @relation("BlamerArchives", fields: [blamerId], references: [id])
+  unblamer         User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
+  user             User     @relation("UserArchives", fields: [userId], references: [id])
 
   @@index([guildId, userId])
   @@index([guildId, blamerId])
   @@index([guildId, unblamerId])
-  @@index([guildId, insult]) // Add index for text searches
+  @@index([guildId, insult])
 }

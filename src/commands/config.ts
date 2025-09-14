@@ -120,11 +120,11 @@ async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildI
     update: { 
       blamerRoleId: isDisabled ? null : role.id,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       blamerRoleId: isDisabled ? null : role.id 
-    } as any
+    }
   });
 
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
@@ -146,11 +146,11 @@ async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildI
     update: { 
       frozenRoleId: isDisabled ? null : role.id,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       frozenRoleId: isDisabled ? null : role.id 
-    } as any
+    }
   });
 
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
@@ -172,11 +172,11 @@ async function handleInsulterRole(interaction: ChatInputCommandInteraction, guil
     update: { 
       insulterRoleId: isDisabled ? null : role.id,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       insulterRoleId: isDisabled ? null : role.id 
-    } as any
+    }
   });
 
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
@@ -197,11 +197,11 @@ async function handleInsulterDays(interaction: ChatInputCommandInteraction, guil
     update: { 
       insulterDays: days,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       insulterDays: days 
-    } as any
+    }
   });
 
   const timeWindow = days === 0 ? 'all-time' : `last ${days} days`;
@@ -223,11 +223,11 @@ async function handleMonitorChannel(interaction: ChatInputCommandInteraction, gu
     update: { 
       monitorChannelId: isDisabled ? null : channel.id,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       monitorChannelId: isDisabled ? null : channel.id 
-    } as any
+    }
   });
 
   const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
@@ -249,11 +249,11 @@ async function handleInsultsChannel(interaction: ChatInputCommandInteraction, gu
     update: { 
       insultsChannelId: isDisabled ? null : channel.id,
       updatedAt: new Date()
-    } as any,
+    },
     create: { 
       guildId, 
       insultsChannelId: isDisabled ? null : channel.id 
-    } as any
+    }
   });
 
   const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
@@ -283,32 +283,32 @@ async function handleViewConfig(interaction: ChatInputCommandInteraction, guildI
     const fields = [];
 
     // Blamer Role
-    const blamerRole = (setup as any).blamerRoleId ? 
-      `<@&${(setup as any).blamerRoleId}>` : 'Not set (all users can use mutating commands)';
+    const blamerRole = setup.blamerRoleId ? 
+      `<@&${setup.blamerRoleId}>` : 'Not set (all users can use mutating commands)';
     fields.push({ name: '🔨 Blamer Role', value: blamerRole, inline: true });
 
     // Frozen Role
-    const frozenRole = (setup as any).frozenRoleId ? 
-      `<@&${(setup as any).frozenRoleId}>` : 'Not set (no users blocked)';
+    const frozenRole = setup.frozenRoleId ? 
+      `<@&${setup.frozenRoleId}>` : 'Not set (no users blocked)';
     fields.push({ name: '❄️ Frozen Role', value: frozenRole, inline: true });
 
     // Insulter Role
-    const insulterRole = (setup as any).insulterRoleId ? 
-      `<@&${(setup as any).insulterRoleId}>` : 'Not set (auto-assignment disabled)';
+    const insulterRole = setup.insulterRoleId ? 
+      `<@&${setup.insulterRoleId}>` : 'Not set (auto-assignment disabled)';
     fields.push({ name: '👑 Insulter Role', value: insulterRole, inline: true });
 
     // Insulter Days
-    const timeWindow = (setup as any).insulterDays === 0 ? 'All-time' : `Last ${(setup as any).insulterDays} days`;
+    const timeWindow = setup.insulterDays === 0 ? 'All-time' : `Last ${setup.insulterDays} days`;
     fields.push({ name: '📅 Insulter Time Window', value: timeWindow, inline: true });
 
     // Monitor Channel
-    const monitorChannel = (setup as any).monitorChannelId ? 
-      `<#${(setup as any).monitorChannelId}>` : 'Not set (system notifications disabled)';
+    const monitorChannel = setup.monitorChannelId ? 
+      `<#${setup.monitorChannelId}>` : 'Not set (system notifications disabled)';
     fields.push({ name: '📢 Monitor Channel', value: monitorChannel, inline: true });
 
     // Insults Channel
-    const insultsChannel = (setup as any).insultsChannelId ? 
-      `<#${(setup as any).insultsChannelId}>` : 'Not set (gameplay logging disabled)';
+    const insultsChannel = setup.insultsChannelId ? 
+      `<#${setup.insultsChannelId}>` : 'Not set (gameplay logging disabled)';
     fields.push({ name: '🎮 Insults Channel', value: insultsChannel, inline: true });
 
     embed.addFields(fields);
@@ -323,8 +323,8 @@ async function logToMonitorChannel(interaction: ChatInputCommandInteraction, mes
       where: { guildId: interaction.guildId! }
     });
 
-    if ((setup as any)?.monitorChannelId) {
-      const channel = interaction.guild?.channels.cache.get((setup as any).monitorChannelId);
+    if (setup?.monitorChannelId) {
+      const channel = interaction.guild?.channels.cache.get(setup.monitorChannelId);
       if (channel?.isTextBased()) {
         const embed = new EmbedBuilder()
           .setTitle('🔧 Configuration Update')
