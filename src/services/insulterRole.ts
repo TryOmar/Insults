@@ -80,7 +80,7 @@ export async function updateInsulterRole(guild: Guild): Promise<InsulterRoleResu
 
     // Log the role change
     await logGameplayAction(
-      { guild, user: newInsulterMember.user } as any,
+      guild,
       {
         action: 'insulter-role-update',
         newInsulter: newInsulterMember.user,

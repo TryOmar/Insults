@@ -19,6 +19,8 @@ import { BlameButton } from '../utils/BlameButton.js';
 const processedInteractionIds = new Set<string>();
 
 export async function handleInteraction(interaction: Interaction) {
+  console.log(`Processing interaction ${interaction.id} of type ${interaction.type}`);
+  
   // Check if already processed first (fastest check)
   if (processedInteractionIds.has(interaction.id)) {
     console.log(`Skipping duplicate interaction: ${interaction.id}`);
@@ -39,6 +41,7 @@ export async function handleInteraction(interaction: Interaction) {
     return;
   }
   
+  // Add to processed set immediately to prevent race conditions
   processedInteractionIds.add(interaction.id);
   
   // Clean up old interaction IDs to prevent memory leaks

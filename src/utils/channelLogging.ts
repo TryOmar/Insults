@@ -26,17 +26,28 @@ export interface GameplayLogData {
 export async function logGameplayAction(
   interaction: ChatInputCommandInteraction, 
   data: GameplayLogData
+): Promise<void>;
+export async function logGameplayAction(
+  guild: Guild, 
+  data: GameplayLogData
+): Promise<void>;
+export async function logGameplayAction(
+  interactionOrGuild: ChatInputCommandInteraction | Guild, 
+  data: GameplayLogData
 ): Promise<void> {
   try {
+    const guildId = 'guildId' in interactionOrGuild ? interactionOrGuild.guildId! : interactionOrGuild.id;
+    const guild = 'guild' in interactionOrGuild ? interactionOrGuild.guild! : interactionOrGuild;
+    
     const setup = await prisma.setup.findUnique({
-      where: { guildId: interaction.guildId! }
+      where: { guildId }
     });
 
     if (!setup?.insultsChannelId) {
       return; // Logging is disabled
     }
 
-    const channel = interaction.guild?.channels.cache.get(setup.insultsChannelId);
+    const channel = guild.channels.cache.get(setup.insultsChannelId);
     if (!channel?.isTextBased()) {
       return; // Channel not found or not text-based
     }

@@ -272,6 +272,9 @@ async function handleViewConfig(interaction: ChatInputCommandInteraction, guildI
     where: { guildId }
   });
 
+  console.log('Config view - Guild ID:', guildId);
+  console.log('Config view - Setup data:', setup);
+
   const embed = new EmbedBuilder()
     .setTitle('⚙️ Server Configuration')
     .setColor(0x5865F2)
@@ -280,38 +283,43 @@ async function handleViewConfig(interaction: ChatInputCommandInteraction, guildI
   if (!setup) {
     embed.setDescription('No configuration set. All features use default settings.');
   } else {
-    const fields = [];
-
     // Blamer Role
-    const blamerRole = setup.blamerRoleId ? 
-      `<@&${setup.blamerRoleId}>` : 'Not set (all users can use mutating commands)';
-    fields.push({ name: '🔨 Blamer Role', value: blamerRole, inline: true });
+    const blamerRole = (setup as any).blamerRoleId ? 
+      `<@&${(setup as any).blamerRoleId}>` : 'Not set (all users can use mutating commands)';
+    console.log('Blamer role ID:', (setup as any).blamerRoleId, 'Display:', blamerRole);
+    embed.addFields({ name: '🔨 Blamer Role', value: blamerRole, inline: true });
 
     // Frozen Role
-    const frozenRole = setup.frozenRoleId ? 
-      `<@&${setup.frozenRoleId}>` : 'Not set (no users blocked)';
-    fields.push({ name: '❄️ Frozen Role', value: frozenRole, inline: true });
+    const frozenRole = (setup as any).frozenRoleId ? 
+      `<@&${(setup as any).frozenRoleId}>` : 'Not set (no users blocked)';
+    console.log('Frozen role ID:', (setup as any).frozenRoleId, 'Display:', frozenRole);
+    embed.addFields({ name: '❄️ Frozen Role', value: frozenRole, inline: true });
 
     // Insulter Role
-    const insulterRole = setup.insulterRoleId ? 
-      `<@&${setup.insulterRoleId}>` : 'Not set (auto-assignment disabled)';
-    fields.push({ name: '👑 Insulter Role', value: insulterRole, inline: true });
+    const insulterRole = (setup as any).insulterRoleId ? 
+      `<@&${(setup as any).insulterRoleId}>` : 'Not set (auto-assignment disabled)';
+    console.log('Insulter role ID:', (setup as any).insulterRoleId, 'Display:', insulterRole);
+    embed.addFields({ name: '👑 Insulter Role', value: insulterRole, inline: true });
 
     // Insulter Days
-    const timeWindow = setup.insulterDays === 0 ? 'All-time' : `Last ${setup.insulterDays} days`;
-    fields.push({ name: '📅 Insulter Time Window', value: timeWindow, inline: true });
+    const insulterDays = (setup as any).insulterDays;
+    const timeWindow = insulterDays === 0 ? 'All-time' : `Last ${insulterDays} days`;
+    console.log('Insulter days:', insulterDays, 'Display:', timeWindow);
+    embed.addFields({ name: '📅 Insulter Time Window', value: timeWindow, inline: true });
 
     // Monitor Channel
-    const monitorChannel = setup.monitorChannelId ? 
-      `<#${setup.monitorChannelId}>` : 'Not set (system notifications disabled)';
-    fields.push({ name: '📢 Monitor Channel', value: monitorChannel, inline: true });
+    const monitorChannelId = (setup as any).monitorChannelId;
+    const monitorChannel = monitorChannelId ? 
+      `<#${monitorChannelId}>` : 'Not set (system notifications disabled)';
+    console.log('Monitor channel ID:', monitorChannelId, 'Display:', monitorChannel);
+    embed.addFields({ name: '📢 Monitor Channel', value: monitorChannel, inline: true });
 
     // Insults Channel
-    const insultsChannel = setup.insultsChannelId ? 
-      `<#${setup.insultsChannelId}>` : 'Not set (gameplay logging disabled)';
-    fields.push({ name: '🎮 Insults Channel', value: insultsChannel, inline: true });
-
-    embed.addFields(fields);
+    const insultsChannelId = (setup as any).insultsChannelId;
+    const insultsChannel = insultsChannelId ? 
+      `<#${insultsChannelId}>` : 'Not set (gameplay logging disabled)';
+    console.log('Insults channel ID:', insultsChannelId, 'Display:', insultsChannel);
+    embed.addFields({ name: '🎮 Insults Channel', value: insultsChannel, inline: true });
   }
 
   await safeInteractionReply(interaction, { embeds: [embed] });

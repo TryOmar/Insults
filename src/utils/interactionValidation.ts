@@ -40,8 +40,8 @@ export function isInteractionExpired(interaction: Interaction): boolean {
   const interactionTime = interaction.createdTimestamp;
   const timeSinceCreation = now - interactionTime;
   
-  // Add a small buffer (1 second) to account for processing time and network delays
-  return timeSinceCreation > 4000; // 4 seconds
+  // Discord interactions expire after 5 seconds, be more conservative
+  return timeSinceCreation > 5000; // 5 seconds
 }
 
 /**
@@ -56,7 +56,11 @@ export function isDiscordAPIError(error: any): boolean {
  */
 export function isInteractionInvalidError(error: any): boolean {
   const invalidCodes = [10062, 40060, 10008]; // Unknown interaction, Already acknowledged, Unknown Message
-  return isDiscordAPIError(error) && invalidCodes.includes((error as any).code);
+  const invalidStringCodes = ['InteractionNotReplied', 'InteractionAlreadyReplied']; // String error codes
+  return isDiscordAPIError(error) && (
+    invalidCodes.includes((error as any).code) || 
+    invalidStringCodes.includes((error as any).code)
+  );
 }
 
 /**
@@ -68,34 +72,45 @@ export async function safeInteractionReply(
   response: any,
   isInitial: boolean = true
 ): Promise<boolean> {
-  // Check if interaction has expired
+  // Check if interaction has expired first
   if (isInteractionExpired(interaction)) {
     console.log(`Interaction ${interaction.id} has expired, skipping response`);
     return false;
   }
 
+  // Check if already replied or deferred
+  if (interaction.replied || interaction.deferred) {
+    console.log(`Interaction ${interaction.id} already replied/deferred, using editReply`);
+    try {
+          const editResponse = { ...response };
+          if (editResponse.flags) {
+            delete editResponse.flags; // editReply doesn't support flags
+          }
+          await interaction.editReply(editResponse);
+          return true;
+    } catch (error) {
+      if (isInteractionInvalidError(error)) {
+        console.log(`Interaction ${interaction.id} is invalid, skipping response`);
+        return false;
+      }
+      throw error;
+    }
+  }
+
   try {
     if (isInitial) {
-      if (interaction.replied || interaction.deferred) {
-        // For editReply, we need to remove flags that aren't supported
-        const editResponse = { ...response };
-        if (editResponse.flags) {
-          delete editResponse.flags; // editReply doesn't support flags
-        }
-        await interaction.editReply(editResponse);
-      } else {
-        await interaction.reply(response);
-      }
+      // For initial responses, try reply() first
+      await interaction.reply(response);
+      return true;
     } else {
+      // For follow-up responses
       if ('update' in interaction) {
-        // For update, we need to remove flags that aren't supported
         const updateResponse = { ...response };
         if (updateResponse.flags) {
           delete updateResponse.flags; // update doesn't support flags
         }
         await interaction.update(updateResponse);
       } else if ('editReply' in interaction) {
-        // For editReply, we need to remove flags that aren't supported
         const editResponse = { ...response };
         if (editResponse.flags) {
           delete editResponse.flags; // editReply doesn't support flags
@@ -105,16 +120,13 @@ export async function safeInteractionReply(
     }
     return true;
   } catch (error) {
-    console.error(`Error responding to interaction ${interaction.id}:`, error);
-    
     // Check if this is a Discord API error indicating the interaction is invalid
     if (isInteractionInvalidError(error)) {
       console.log(`Interaction ${interaction.id} is invalid (expired or already acknowledged), skipping error response`);
       return false;
     }
     
-    // If it's not an invalid interaction error, log it but don't try to respond again
-    console.log('Failed to respond to interaction:', error);
-    return false;
+    // Re-throw other errors
+    throw error;
   }
 }
