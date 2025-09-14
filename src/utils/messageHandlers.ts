@@ -3,6 +3,7 @@ import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { guildSetupService } from '../services/guildSetup.js';
 import { checkCooldown } from '../utils/cooldown.js';
+import { generateInsultCandidates } from './insultUtils.js';
 
 /**
  * Handles when the bot is mentioned in a message
@@ -66,39 +67,7 @@ export async function handleDMMessage(message: Message): Promise<void> {
   }
 }
 
-/**
- * Normalizes text for radar scanning by collapsing to letter/number tokens joined by single spaces
- */
-export function normalizeForRadar(text: string): string {
-  return text
-    .toLowerCase()
-    .split(/[^\p{L}\p{Nd}]+/u)
-    .filter(Boolean)
-    .join(' ');
-}
-
-/**
- * Generates n-grams from a list of tokens
- */
-export function generateNGrams(tokens: string[], maxN: number = 3): string[] {
-  const ngrams: string[] = [];
-  
-  for (let i = 0; i < tokens.length; i++) {
-    let current = '';
-    for (let n = 1; n <= maxN && i + n <= tokens.length; n++) {
-      current = n === 1 ? tokens[i] : current + ' ' + tokens[i + n - 1];
-      ngrams.push(current);
-    }
-  }
-  
-  // De-duplicate while preserving order
-  const seen = new Set<string>();
-  return ngrams.filter(s => {
-    if (seen.has(s)) return false;
-    seen.add(s);
-    return true;
-  });
-}
+// Removed normalizeForRadar and generateNGrams functions - now using generateInsultCandidates from insultUtils
 
 /**
  * Scans a message for insults using radar functionality
@@ -119,27 +88,17 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
   const content = message.content;
   if (!content || content.trim().length === 0) return;
 
-  // Tokenize the message content
-  const tokens = content
-    .toLowerCase()
-    .split(/[^\p{L}\p{Nd}]+/u)
-    .filter(Boolean);
-  
-  if (tokens.length === 0) return;
+  // Generate canonicalized n-grams
+  const candidates = generateInsultCandidates(content);
 
-  // Generate n-gram candidates
-  const candidates = generateNGrams(tokens);
-
-  // Get distinct bad words from existing insults table for this guild only
+  // Get insults from DB
   const groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
   if (!groups.length) return;
   
-  const badwords = new Set(groups
-    .map(g => normalizeForRadar(g.insult))
-    .filter(Boolean));
+  const insults = new Set(groups.map(g => g.insult));
 
-  // Find first matching candidate phrase (1-3 words)
-  const hit = candidates.find(t => badwords.has(t));
+  // Match by exact string equality
+  const hit = candidates.find(c => insults.has(c));
   if (!hit) return;
 
   // Record an automatic blame: target = author, blamer = bot-self

@@ -1,6 +1,7 @@
 import { EmbedBuilder, User, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { formatInsultFrequencyPairs } from '../utils/insultFormatter.js';
+import { validateInsultInput, validateNoteInput } from '../utils/insultUtils.js';
 
 export interface BlameParams {
   guildId: string;
@@ -22,17 +23,7 @@ export interface BlameError {
   message: string;
 }
 
-function normalizeInput(value: string | null | undefined, maxLen: number): string | null {
-  if (value == null) return null;
-  // Remove only leading spaces; keep internal and trailing spaces
-  let normalized = value.replace(/^\s+/, '');
-  // Replace newlines with a single space (Discord inputs rarely include these)
-  if (normalized.includes('\n')) normalized = normalized.replace(/\n+/g, ' ');
-  if (normalized.length === 0) return '';
-  if (normalized.length > maxLen) normalized = normalized.slice(0, maxLen);
-  // Store as lowercase for consistency
-  return normalized.toLowerCase();
-}
+// Removed normalizeInput function - now using validateInsultInput and validateNoteInput from insultUtils
 
 export type BlameEmbedType = 'public' | 'dm';
 
@@ -118,31 +109,18 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
     return { ok: false, error: { message: 'Bot users are not allowed for this command.' } };
   }
 
-  const insult = normalizeInput(insultRaw, 140);
-  // Set reasonable limit for notes (500 characters)
-  const note = normalizeInput(noteRaw ?? null, 500);
+  let insult: string;
+  let note: string | null;
 
-  if (!insult) {
-    return { ok: false, error: { message: 'Insult must be 1–140 characters.' } };
-  }
-
-  // Enforce up to 3 words for consistency with radar (supports 1–3 word phrases)
-  const words = insult.split(/\s+/).filter(Boolean);
-  const wordCount = words.length;
-  if (wordCount > 3) {
-    return { ok: false, error: { message: 'Insult must be a single phrase of up to 3 words.' } };
-  }
-
-  // Check individual word length (max 20 characters per word)
-  for (const word of words) {
-    if (word.length > 20) {
-      return { ok: false, error: { message: 'Each insult word must be 20 characters or less.' } };
+  try {
+    const validatedInsult = validateInsultInput(insultRaw);
+    if (!validatedInsult) {
+      return { ok: false, error: { message: 'Invalid insult input.' } };
     }
-  }
-
-  // Validate note length
-  if (note && note.length > 500) {
-    return { ok: false, error: { message: 'Note must be 500 characters or less.' } };
+    insult = validatedInsult;
+    note = validateNoteInput(noteRaw ?? null);
+  } catch (error) {
+    return { ok: false, error: { message: (error as Error).message } };
   }
 
   // Allow spaces inside the insult phrase; no strict single-token rule

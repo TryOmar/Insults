@@ -24,12 +24,13 @@ model Insult {
   userId     String
   blamer     User     @relation("BlamerInsults", fields: [blamerId], references: [id])
   blamerId   String
-  insult     String
-  note       String?
+  insult     String   @db.VarChar(100)   // unified 100-char limit
+  note       String?  @db.VarChar(1000)  // paragraphs, links, short notes
   createdAt  DateTime @default(now())
 
   @@index([guildId, userId])
   @@index([guildId, blamerId])
+  @@index([guildId, insult]) // Add index for text searches
 }
 
 model Setup {
@@ -46,8 +47,8 @@ model Archive {
   userId          String
   blamer          User     @relation("BlamerArchives", fields: [blamerId], references: [id])
   blamerId        String
-  insult          String
-  note            String?
+  insult          String   @db.VarChar(100)   // Same constraint as Insult
+  note            String?  @db.VarChar(1000)  // Same constraint as Insult
   createdAt       DateTime
 
   unblamer        User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
@@ -57,4 +58,5 @@ model Archive {
   @@index([guildId, userId])
   @@index([guildId, blamerId])
   @@index([guildId, unblamerId])
+  @@index([guildId, insult]) // Add index for text searches
 }

@@ -5,6 +5,7 @@ import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { validateInsultInput } from '../utils/insultUtils.js';
 
 const PAGE_SIZE = 10;
 
@@ -19,9 +20,9 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show insult stats overall or for a specific word')
   .addStringOption(opt =>
     opt.setName('word')
-      .setDescription('Optional: specific insult phrase (up to 3 words, max 20 chars per word)')
+      .setDescription('Optional: specific insult to search for')
       .setRequired(false)
-      .setMaxLength(140)
+      .setMaxLength(100)
   );
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
@@ -37,46 +38,30 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const wordRaw = interaction.options.getString('word', false);
   if (wordRaw) {
-    const normalized = wordRaw
-      .toLowerCase()
-      .split(/[^\p{L}\p{Nd}]+/u)
-      .filter(Boolean)
-      .join(' ');
-    const words = normalized.split(/\s+/).filter(Boolean);
-    const wc = words.length;
-    if (wc === 0) {
-      const success = await safeInteractionReply(interaction, { 
-        content: 'Please enter an insult phrase.', 
-        flags: MessageFlags.Ephemeral 
-      });
-      if (!success) return;
-      return;
-    }
-    if (wc > 3) {
-      const success = await safeInteractionReply(interaction, { 
-        content: 'Insult phrase must be up to 3 words.', 
-        flags: MessageFlags.Ephemeral 
-      });
-      if (!success) return;
-      return;
-    }
-    // Check individual word length (max 20 characters per word)
-    for (const word of words) {
-      if (word.length > 20) {
+    try {
+      const cleaned = validateInsultInput(wordRaw);
+      if (!cleaned) {
         const success = await safeInteractionReply(interaction, { 
-          content: 'Each insult word must be 20 characters or less.', 
+          content: 'Please enter a valid insult phrase.', 
           flags: MessageFlags.Ephemeral 
         });
         if (!success) return;
         return;
       }
+      // Store cleaned word for exact DB match
+      (interaction as any)._cleanedWord = cleaned;
+    } catch (error) {
+      const success = await safeInteractionReply(interaction, { 
+        content: (error as Error).message, 
+        flags: MessageFlags.Ephemeral 
+      });
+      if (!success) return;
+      return;
     }
-    // Overwrite the raw input with normalized for exact DB match
-    (interaction as any)._normalizedWord = normalized;
   }
 
   const scope: ViewScope = wordRaw 
-    ? { mode: 'word', guildId, word: ((interaction as any)._normalizedWord ?? wordRaw) as string }
+    ? { mode: 'word', guildId, word: ((interaction as any)._cleanedWord ?? wordRaw) as string }
     : { mode: 'all', guildId };
   
   const paginationManager = createInsultsPaginationManager();
@@ -369,5 +354,6 @@ export async function handleButton(customId: string, interaction: ButtonInteract
   
   await paginationManager.respondWithPage(interaction, newPage, false, scope);
 }
+
 
 
