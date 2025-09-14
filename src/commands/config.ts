@@ -70,33 +70,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   try {
     switch (action) {
       case 'blamer-role':
-        if (!role) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide a role for the blamer role setting.', 
-            flags: MessageFlags.Ephemeral 
-          });
-          return;
-        }
         await handleBlamerRole(interaction, guildId, role);
         break;
       case 'frozen-role':
-        if (!role) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide a role for the frozen role setting.', 
-            flags: MessageFlags.Ephemeral 
-          });
-          return;
-        }
         await handleFrozenRole(interaction, guildId, role);
         break;
       case 'insulter-role':
-        if (!role) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide a role for the insulter role setting.', 
-            flags: MessageFlags.Ephemeral 
-          });
-          return;
-        }
         await handleInsulterRole(interaction, guildId, role);
         break;
       case 'insulter-days':
@@ -110,23 +89,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         await handleInsulterDays(interaction, guildId, days);
         break;
       case 'monitor-channel':
-        if (!channel) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide a channel for the monitor channel setting.', 
-            flags: MessageFlags.Ephemeral 
-          });
-          return;
-        }
         await handleMonitorChannel(interaction, guildId, channel);
         break;
       case 'insults-channel':
-        if (!channel) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide a channel for the insults channel setting.', 
-            flags: MessageFlags.Ephemeral 
-          });
-          return;
-        }
         await handleInsultsChannel(interaction, guildId, channel);
         break;
       case 'view':
@@ -148,7 +113,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = role.name === 'none' || role.id === guildId; // @everyone role
+  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -162,7 +127,7 @@ async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildI
     } as any
   });
 
-  const status = isDisabled ? 'disabled' : `set to ${role.name}`;
+  const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Blamer Role Updated')
     .setDescription(`Blamer role ${status}. ${isDisabled ? 'All users can now use mutating commands.' : 'Only users with this role can use mutating commands.'}`)
@@ -174,7 +139,7 @@ async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildI
 }
 
 async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = role.name === 'none' || role.id === guildId; // @everyone role
+  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -188,7 +153,7 @@ async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildI
     } as any
   });
 
-  const status = isDisabled ? 'disabled' : `set to ${role.name}`;
+  const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Frozen Role Updated')
     .setDescription(`Frozen role ${status}. ${isDisabled ? 'No users are blocked from using commands.' : 'Users with this role cannot use any bot commands.'}`)
@@ -200,7 +165,7 @@ async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildI
 }
 
 async function handleInsulterRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = role.name === 'none' || role.id === guildId; // @everyone role
+  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -214,7 +179,7 @@ async function handleInsulterRole(interaction: ChatInputCommandInteraction, guil
     } as any
   });
 
-  const status = isDisabled ? 'disabled' : `set to ${role.name}`;
+  const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Insulter Role Updated')
     .setDescription(`Insulter role ${status}. ${isDisabled ? 'Auto-assignment is disabled.' : 'This role will be automatically assigned to the top insulter.'}`)
@@ -251,7 +216,7 @@ async function handleInsulterDays(interaction: ChatInputCommandInteraction, guil
 }
 
 async function handleMonitorChannel(interaction: ChatInputCommandInteraction, guildId: string, channel: any) {
-  const isDisabled = channel.name === 'none';
+  const isDisabled = !channel || channel.name === 'none';
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -265,7 +230,7 @@ async function handleMonitorChannel(interaction: ChatInputCommandInteraction, gu
     } as any
   });
 
-  const status = isDisabled ? 'disabled' : `set to ${channel.name}`;
+  const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Monitor Channel Updated')
     .setDescription(`Monitor channel ${status}. ${isDisabled ? 'System notifications are disabled.' : 'System notifications will be sent to this channel.'}`)
@@ -277,7 +242,7 @@ async function handleMonitorChannel(interaction: ChatInputCommandInteraction, gu
 }
 
 async function handleInsultsChannel(interaction: ChatInputCommandInteraction, guildId: string, channel: any) {
-  const isDisabled = channel.name === 'none';
+  const isDisabled = !channel || channel.name === 'none';
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -291,7 +256,7 @@ async function handleInsultsChannel(interaction: ChatInputCommandInteraction, gu
     } as any
   });
 
-  const status = isDisabled ? 'disabled' : `set to ${channel.name}`;
+  const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Insults Channel Updated')
     .setDescription(`Insults channel ${status}. ${isDisabled ? 'Gameplay action logging is disabled.' : 'Gameplay actions will be logged to this channel.'}`)
