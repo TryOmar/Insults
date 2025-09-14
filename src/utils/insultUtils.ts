@@ -30,7 +30,7 @@ export function validateInsultInput(raw: string | null): string | null {
   }
   for (const w of words) {
     if (w.length > 20) {
-      throw new Error("Each word must be 20 characters or less.");
+      throw new Error("Insult word too long. Keep each insult short and simple.");
     }
   }
   return cleaned;

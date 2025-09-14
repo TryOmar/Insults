@@ -42,7 +42,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       const cleaned = validateInsultInput(wordRaw);
       if (!cleaned) {
         const success = await safeInteractionReply(interaction, { 
-          content: 'Please enter a valid insult phrase.', 
+          content: 'Please enter a valid insult.', 
           flags: MessageFlags.Ephemeral 
         });
         if (!success) return;
