@@ -20,20 +20,20 @@ export const data = new SlashCommandBuilder()
 async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
+    await safeInteractionReply(interaction, { content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     return;
   }
 
   // Check role permissions
   const member = await getGuildMember(interaction);
   if (!member) {
-    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    await safeInteractionReply(interaction, { content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
     return;
   }
 
   const roleCheck = await canUseBotCommands(member, false); // false = non-mutating command
   if (!roleCheck.allowed) {
-    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
+    await safeInteractionReply(interaction, { content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
     return;
   }
 

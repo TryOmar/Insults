@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, userMention, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
@@ -6,6 +6,10 @@ import { withSpamProtection } from '../utils/commandWrapper.js';
 import { canUseBotCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
 import { updateInsulterRoleAfterCommand } from '../utils/insulterRoleUpdate.js';
+import { withGuildAndAuth } from '../utils/commandScaffold.js';
+import { parseNumericIds } from '../utils/ids.js';
+import { createSimplePager } from '../utils/simplePager.js';
+import { buildSummaryEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
@@ -15,56 +19,25 @@ export const data = new SlashCommandBuilder()
   );
 
 type Page = { embeds: EmbedBuilder[] };
-const sessionStore = new Map<string, { pages: Page[]; currentPage: number }>();
+const pager = createSimplePager('unblame');
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
-  const guildId = interaction.guildId;
-  if (!guildId) {
-    const success = await safeInteractionReply(interaction, { 
-      content: 'This command can only be used in a server.', 
-      flags: MessageFlags.Ephemeral 
-    });
-    if (!success) return;
-    return;
-  }
+  const ctx = await withGuildAndAuth(interaction, { requiresMutating: true, defer: true });
+  if (!ctx) return;
 
-  // Check role permissions
-  const member = await getGuildMember(interaction);
-  if (!member) {
-    const success = await safeInteractionReply(interaction, { 
-      content: 'Unable to verify your permissions.', 
-      flags: MessageFlags.Ephemeral 
-    });
-    if (!success) return;
-    return;
-  }
-
-  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
-  if (!roleCheck.allowed) {
-    const success = await safeInteractionReply(interaction, { 
-      content: roleCheck.reason || 'You do not have permission to use this command.', 
-      flags: MessageFlags.Ephemeral 
-    });
-    if (!success) return;
-    return;
-  }
+  const { guildId, invokerId, member } = ctx;
 
   const raw = interaction.options.getString('id', true);
-  const invokerId = interaction.user.id;
-
-  // Extract all numeric IDs from input (split by any non-digit separators)
-  const rawIds = (raw.match(/\d+/g) || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v));
-  if (rawIds.length === 0) {
-    const success = await safeInteractionReply(interaction, { 
-      content: 'Please provide a valid blame ID.', 
-      flags: MessageFlags.Ephemeral 
-    });
-    if (!success) return;
+  const { processed: ids, skipped: skippedIds } = parseNumericIds(raw, 50);
+  if (ids.length === 0) {
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ Invalid Input')
+      .setDescription('Please provide a valid blame ID.')
+      .setColor(0xE74C3C)
+      .setTimestamp();
+    await interaction.editReply({ embeds: [errorEmbed] });
     return;
   }
-
-  // Remove duplicate IDs to prevent unique constraint violations
-  const ids = [...new Set(rawIds)];
 
   const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
@@ -75,21 +48,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
 
-  // Cap how many IDs we process to prevent overload
-  const MAX_IDS = 50;
-  const processedIds = ids.slice(0, MAX_IDS);
-  const skippedIds = ids.slice(MAX_IDS);
-
-  // Defer reply to avoid interaction timeout for heavier operations
-  await interaction.deferReply();
-
   // Batch-fetch insults scoped to current guild to prevent cross-server unblames
-  const foundInsults = await prisma.insult.findMany({ where: { id: { in: processedIds }, guildId } });
+  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids }, guildId } });
   const insultById = new Map<number, typeof foundInsults[number]>(foundInsults.map(i => [i.id, i]));
 
   // Determine permissions and categorize
   const allowedToDelete: typeof foundInsults = [];
-  for (const id of processedIds) {
+  for (const id of ids) {
     const found = insultById.get(id);
     if (!found) {
       // If it's already archived or not present at all, treat as not found
@@ -124,7 +89,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
     try {
       await prisma.$transaction([
-        (prisma as any).archive.createMany({ data: archiveData, skipDuplicates: true }),
+        prisma.archive.createMany({ data: archiveData, skipDuplicates: true }),
         prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
       ]);
 
@@ -218,14 +183,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Build pages: summary + detail pages for deleted items
   const pages: Page[] = [];
   
-  const summary = new EmbedBuilder()
-    .setTitle('Unblame Summary')
-    .addFields(
-      { name: 'Deleted', value: successIds, inline: false },
-      ...(otherParts.length ? [{ name: 'Other', value: otherParts.join('\n'), inline: false }] : []) as any
-    )
-    .setColor(0x2ECC71)
-    .setTimestamp();
+  const summaryText = ['Deleted: ' + successIds, ...(otherParts.length ? ['Other: ' + otherParts.join('\n')] : [])].join('\n');
+  const summary = buildSummaryEmbed('Unblame Summary', summaryText, 0x2ECC71);
   pages.push({ embeds: [summary] });
 
   for (const d of deleted) {
@@ -235,7 +194,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         { name: '**Blame ID**', value: `#${d.id}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
         { name: '**Note**', value: d.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(d.userId), inline: true },
+        { name: '**Insulter**', value: userMention(d.userId), inline: false },
         { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
         { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
         { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
@@ -245,23 +204,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     pages.push({ embeds: [embed] });
   }
 
-  const buildButtons = (page: number, total: number) => {
-    const row = new ActionRowBuilder<ButtonBuilder>();
-    row.addComponents(
-      new ButtonBuilder().setCustomId('unblame:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('unblame:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
-      new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
-    );
-    return [row];
-  };
-
   const initialPage = 1;
-  await interaction.editReply({ embeds: pages[initialPage - 1].embeds, components: buildButtons(initialPage, pages.length) });
-  const sent = await interaction.fetchReply();
-  sessionStore.set(sent.id, { pages, currentPage: initialPage });
-  // Cleanup session after 15 minutes
-  setTimeout(() => sessionStore.delete(sent.id), 15 * 60 * 1000);
+  await pager.send(interaction, pages.map(p => p.embeds), initialPage);
 
   // Update insulter role after successful unblame operations
   if (deleted.length > 0) {
@@ -270,29 +214,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
-  if (!customId.startsWith('unblame:')) return;
-  const action = customId.split(':')[1];
-  const messageId = interaction.message?.id;
-  if (!messageId) return;
-  const session = sessionStore.get(messageId);
-  if (!session) return;
-
-  const totalPages = session.pages.length;
-  let newPage = session.currentPage;
-  if (action === 'first') newPage = 1;
-  else if (action === 'prev') newPage = Math.max(1, session.currentPage - 1);
-  else if (action === 'next') newPage = Math.min(totalPages, session.currentPage + 1);
-  else if (action === 'last') newPage = totalPages;
-
-  session.currentPage = newPage;
-  const row = new ActionRowBuilder<ButtonBuilder>();
-  row.addComponents(
-    new ButtonBuilder().setCustomId('unblame:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
-    new ButtonBuilder().setCustomId('unblame:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
-    new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
-    new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
-  );
-  await interaction.update({ embeds: session.pages[newPage - 1].embeds, components: [row] });
+  await pager.handleButton(customId, interaction);
 }
 
 // Export with spam protection

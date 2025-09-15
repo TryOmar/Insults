@@ -1,11 +1,13 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags, PermissionFlagsBits, EmbedBuilder, userMention, ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, userMention, ButtonInteraction } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
-import { canUseBotCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
 import { updateInsulterRoleAfterCommand } from '../utils/insulterRoleUpdate.js';
-import { getGuildMember } from '../utils/interactionValidation.js';
+import { withGuildAndAuth } from '../utils/commandScaffold.js';
+import { parseNumericIds } from '../utils/ids.js';
+import { createSimplePager } from '../utils/simplePager.js';
+import { buildSummaryEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('revert')
@@ -15,43 +17,28 @@ export const data = new SlashCommandBuilder()
   );
 
 type Page = { embeds: EmbedBuilder[] };
-const sessionStore = new Map<string, { pages: Page[]; currentPage: number }>();
+const pager = createSimplePager('revert');
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
-  const guildId = interaction.guildId;
-  if (!guildId) {
-    await interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
-    return;
-  }
+  const ctx = await withGuildAndAuth(interaction, { requiresMutating: true, defer: true });
+  if (!ctx) return;
 
-  // Check role permissions
-  const member = await getGuildMember(interaction);
-  if (!member) {
-    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
-  if (!roleCheck.allowed) {
-    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
-    return;
-  }
+  const { guildId, invokerId, member } = ctx;
 
   const raw = interaction.options.getString('id', true);
-  const invokerId = interaction.user.id;
-
-  const ids = (raw.match(/\d+/g) || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v));
-  if (ids.length === 0) {
-    await interaction.reply({ content: 'Please provide a valid archived blame ID.', flags: MessageFlags.Ephemeral });
-    return;
-  }
 
   const MAX_IDS = 50;
-  const processedIds = [...new Set(ids)].slice(0, MAX_IDS);
-  const skippedIds = [...new Set(ids)].slice(MAX_IDS);
-
-  // Avoid interaction timeout while doing DB work
-  await interaction.deferReply();
+  const { processed: processedIds, skipped: skippedIds } = parseNumericIds(raw, MAX_IDS);
+  if (processedIds.length === 0) {
+    // Already deferred; edit the reply with an error and exit
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ Invalid Input')
+      .setDescription('Please provide a valid archived blame ID.')
+      .setColor(0xE74C3C)
+      .setTimestamp();
+    await interaction.editReply({ embeds: [errorEmbed] });
+    return;
+  }
 
   const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
@@ -63,7 +50,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
   // Batch-fetch archives for the requested original IDs, scoped to current guild
-  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: processedIds }, guildId } });
+  const archives = await prisma.archive.findMany({ where: { originalInsultId: { in: processedIds }, guildId } });
 
   // Permission filtering
   const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
@@ -117,7 +104,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
   if (originalsToDelete.length > 0) {
     try {
-      await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
+      await prisma.archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
     } catch (err) {
       const errorEmbed = new EmbedBuilder()
         .setTitle('⚠️ Partial Revert')
@@ -187,14 +174,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (failed.length) otherParts.push(`Failed: ${failed.map(f => `#${f.id}`).join(', ')}`);
   if (skippedIds.length) otherParts.push(`Skipped (too many IDs): ${skippedIds.map(id => `#${id}`).join(', ')}`);
 
-  const summary = new EmbedBuilder()
-    .setTitle('Revert Summary')
-    .addFields(
-      { name: 'Restored', value: successIds, inline: false },
-      ...(otherParts.length ? [{ name: 'Other', value: otherParts.join('\n'), inline: false }] : []) as any
-    )
-    .setColor(0x1ABC9C)
-    .setTimestamp();
+  const summaryText = ['Restored: ' + successIds, ...(otherParts.length ? ['Other: ' + otherParts.join('\n')] : [])].join('\n');
+  const summary = buildSummaryEmbed('Revert Summary', summaryText, 0x1ABC9C);
   pages.push({ embeds: [summary] });
 
   for (const d of restored) {
@@ -214,23 +195,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     pages.push({ embeds: [embed] });
   }
 
-  const buildButtons = (page: number, total: number) => {
-    const row = new ActionRowBuilder<ButtonBuilder>();
-    row.addComponents(
-      new ButtonBuilder().setCustomId('revert:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('revert:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('revert:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
-      new ButtonBuilder().setCustomId('revert:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
-    );
-    return [row];
-  };
-
   const initialPage = 1;
-  await interaction.editReply({ embeds: pages[initialPage - 1].embeds, components: buildButtons(initialPage, pages.length) });
-  const sent = await interaction.fetchReply();
-  sessionStore.set(sent.id, { pages, currentPage: initialPage });
-  // Cleanup session after 15 minutes
-  setTimeout(() => sessionStore.delete(sent.id), 15 * 60 * 1000);
+  await pager.send(interaction, pages.map(p => p.embeds), initialPage);
 
   // Update insulter role after successful revert operations
   if (restored.length > 0) {
@@ -239,29 +205,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
-  if (!customId.startsWith('revert:')) return;
-  const action = customId.split(':')[1];
-  const messageId = interaction.message?.id;
-  if (!messageId) return;
-  const session = sessionStore.get(messageId);
-  if (!session) return;
-
-  const totalPages = session.pages.length;
-  let newPage = session.currentPage;
-  if (action === 'first') newPage = 1;
-  else if (action === 'prev') newPage = Math.max(1, session.currentPage - 1);
-  else if (action === 'next') newPage = Math.min(totalPages, session.currentPage + 1);
-  else if (action === 'last') newPage = totalPages;
-
-  session.currentPage = newPage;
-  const row = new ActionRowBuilder<ButtonBuilder>();
-  row.addComponents(
-    new ButtonBuilder().setCustomId('revert:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
-    new ButtonBuilder().setCustomId('revert:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 1),
-    new ButtonBuilder().setCustomId('revert:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
-    new ButtonBuilder().setCustomId('revert:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(newPage === totalPages),
-  );
-  await interaction.update({ embeds: session.pages[newPage - 1].embeds, components: [row] });
+  await pager.handleButton(customId, interaction);
 }
 
 // Export with spam protection
