@@ -15,15 +15,15 @@ export const DATABASE_CONFIG = {
   
   // Connection pool limits
   MAX_CONNECTIONS: 5,        // Maximum number of connections in the pool
-  POOL_TIMEOUT: 20,          // Timeout for getting a connection from the pool (seconds)
+  POOL_TIMEOUT: 30,          // Timeout for getting a connection from the pool (seconds)
   CONNECT_TIMEOUT: 60,       // Timeout for establishing a connection (seconds)
   
   // Query timeouts
-  QUERY_TIMEOUT: 30,         // Timeout for individual queries (seconds)
+  QUERY_TIMEOUT: 25,         // Timeout for individual queries (seconds) - Discord limit is 3s
   
   // Retry settings
   MAX_RETRIES: 3,            // Maximum number of retry attempts
-  RETRY_DELAY: 1000,         // Delay between retries (milliseconds)
+  RETRY_DELAY: 2000,         // Delay between retries (milliseconds) - increased for stability
   
   // Error codes that should trigger retries
   RETRYABLE_ERROR_CODES: [

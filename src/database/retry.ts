@@ -4,6 +4,18 @@ import { DATABASE_CONFIG, isRetryableError, getDatabaseErrorMessage, sleep } fro
 export { isRetryableError, getDatabaseErrorMessage };
 
 /**
+ * Add timeout to a database operation
+ */
+function withTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    operation(),
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]);
+}
+
+/**
  * Execute a database operation with automatic retry logic for connection issues
  */
 export async function withRetry<T>(
@@ -14,7 +26,9 @@ export async function withRetry<T>(
   
   for (let attempt = 1; attempt <= DATABASE_CONFIG.MAX_RETRIES; attempt++) {
     try {
-      return await operation();
+      // Add timeout to prevent long-running queries
+      const timeoutMs = DATABASE_CONFIG.QUERY_TIMEOUT * 1000;
+      return await withTimeout(operation, timeoutMs);
     } catch (error) {
       lastError = error;
       
