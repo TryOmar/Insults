@@ -51,63 +51,68 @@ async function fetchHistoryData(scope: HistoryScope, page: number, pageSize: num
   try {
     const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
 
-    // Reduce concurrent database calls to avoid overwhelming the connection pool
-    // First, get the main data we need
-    const [totalCount, entries] = await Promise.all([
-      prisma.insult.count({ where }),
-      prisma.insult.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
+    // Use a single transaction to batch all queries
+    return await prisma.$transaction(async (tx) => {
+      // Get the main data we need in parallel within the transaction
+      const [totalCount, entries] = await Promise.all([
+        tx.insult.count({ where }),
+        tx.insult.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ]);
 
-    // Then get additional data sequentially to reduce load
-    const distinctUsers = await prisma.insult.groupBy({ by: ['userId'], where }).then((g) => g.length);
-    const distinctInsults = await prisma.insult.groupBy({ by: ['insult'], where, _count: { insult: true } });
-    const targetUser = scope.userId ? await prisma.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : null;
+      // Get additional data in parallel within the same transaction
+      const [distinctUsers, distinctInsults, targetUser] = await Promise.all([
+        tx.insult.groupBy({ by: ['userId'], where }).then((g) => g.length),
+        tx.insult.groupBy({ by: ['insult'], where, _count: { insult: true } }),
+        scope.userId ? tx.user.findUnique({ where: { id: scope.userId }, select: { username: true } }) : null,
+      ]);
 
-    // Fetch blamer usernames
-    const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
-    const blamers = uniqueBlamerIds.length
-      ? await prisma.user.findMany({ where: { id: { in: uniqueBlamerIds } }, select: { id: true, username: true } })
-      : [];
-    const blamerMap = new Map(blamers.map((u) => [u.id, u.username]));
+      // Get all unique user IDs we need to fetch
+      const uniqueBlamerIds = Array.from(new Set(entries.map((e) => e.blamerId)));
+      const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
+      const allUserIds = [...uniqueBlamerIds, ...uniqueInsultedIds];
 
-    // Fetch insulted user usernames
-    const uniqueInsultedIds = Array.from(new Set(entries.map((e) => e.userId)));
-    const insultedUsers = uniqueInsultedIds.length
-      ? await prisma.user.findMany({ where: { id: { in: uniqueInsultedIds } }, select: { id: true, username: true } })
-      : [];
-    const insultedUserMap = new Map(insultedUsers.map((u) => [u.id, u.username]));
+      // Fetch all users in one query
+      const users = allUserIds.length
+        ? await tx.user.findMany({ where: { id: { in: allUserIds } }, select: { id: true, username: true } })
+        : [];
+      const userMap = new Map(users.map((u) => [u.id, u.username]));
 
-    // Build distinct insults summary with counts using the formatter
-    const insultGroups = distinctInsults;
-    const formattedInsults = formatInsultFrequencyPairs(insultGroups);
+      // Create separate maps for blamers and insulted users
+      const blamerMap = new Map(uniqueBlamerIds.map(id => [id, userMap.get(id) ?? 'Unknown']));
+      const insultedUserMap = new Map(uniqueInsultedIds.map(id => [id, userMap.get(id) ?? 'Unknown']));
 
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+      // Build distinct insults summary with counts using the formatter
+      const insultGroups = distinctInsults;
+      const formattedInsults = formatInsultFrequencyPairs(insultGroups);
 
-    return {
-      items: entries,
-      totalCount,
-      currentPage: page,
-      totalPages,
-      // Additional data for the embed
-      distinctUsers,
-      blamerMap,
-      insultedUserMap,
-      insultGroups,
-      formattedInsults,
-      targetUsername: targetUser?.username ?? null
-    } as PaginationData<any> & {
-      distinctUsers: number;
-      blamerMap: Map<string, string>;
-      insultedUserMap: Map<string, string>;
-      insultGroups: Array<{ insult: string; _count: { insult: number } }>;
-      formattedInsults: string;
-      targetUsername: string | null;
-    };
+      const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+      return {
+        items: entries,
+        totalCount,
+        currentPage: page,
+        totalPages,
+        // Additional data for the embed
+        distinctUsers,
+        blamerMap,
+        insultedUserMap,
+        insultGroups,
+        formattedInsults,
+        targetUsername: targetUser?.username ?? null
+      } as PaginationData<any> & {
+        distinctUsers: number;
+        blamerMap: Map<string, string>;
+        insultedUserMap: Map<string, string>;
+        insultGroups: Array<{ insult: string; _count: { insult: number } }>;
+        formattedInsults: string;
+        targetUsername: string | null;
+      };
+    });
   } catch (error) {
     // Check if this is a database connection error
     if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
@@ -255,22 +260,19 @@ export async function handleButton(customId: string, interaction: ButtonInteract
       newPage = Math.max(1, sessionParsed.page - 1);
       break;
     case 'next':
-      // Get current data to determine total pages
-      try {
-        const currentData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
-        newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
-      } catch (error) {
-        console.error('Error fetching data for next button:', error);
-        return; // Exit early if we can't fetch data
-      }
+      // For next, we can safely increment without checking total pages
+      // The pagination manager will handle bounds checking
+      newPage = sessionParsed.page + 1;
       break;
     case 'last':
-      // Get current data to determine total pages
+      // For last page, we need to get total pages, but we'll do this efficiently
+      // by using a lightweight count query instead of fetching all data
       try {
-        const lastData = await fetchHistoryData(scope, sessionParsed.page, PAGE_SIZE);
-        newPage = lastData.totalPages;
+        const where = { guildId: scope.guildId, ...(scope.userId ? { userId: scope.userId } : {}) } as any;
+        const totalCount = await prisma.insult.count({ where });
+        newPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
       } catch (error) {
-        console.error('Error fetching data for last button:', error);
+        console.error('Error fetching total count for last button:', error);
         return; // Exit early if we can't fetch data
       }
       break;

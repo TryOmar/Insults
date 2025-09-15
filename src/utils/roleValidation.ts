@@ -10,9 +10,7 @@ export interface RoleCheckResult {
  * Check if a user can use mutating commands (blame, unblame, revert, radar, archive)
  */
 export async function canUseMutatingCommands(member: GuildMember): Promise<RoleCheckResult> {
-  const setup = await prisma.setup.findUnique({
-    where: { guildId: member.guild.id }
-  });
+  const setup = await prisma.setup.findUnique({ where: { guildId: member.guild.id } });
 
   // If no blamer role is set, all users can use mutating commands
   if (!(setup as any)?.blamerRoleId) {
@@ -35,9 +33,7 @@ export async function canUseMutatingCommands(member: GuildMember): Promise<RoleC
  * Check if a user is frozen (blocked from using any bot commands)
  */
 export async function isUserFrozen(member: GuildMember): Promise<RoleCheckResult> {
-  const setup = await prisma.setup.findUnique({
-    where: { guildId: member.guild.id }
-  });
+  const setup = await prisma.setup.findUnique({ where: { guildId: member.guild.id } });
 
   // If no frozen role is set, no users are blocked
   if (!(setup as any)?.frozenRoleId) {

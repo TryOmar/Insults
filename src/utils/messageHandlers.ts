@@ -160,7 +160,7 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
   // Generate canonicalized n-grams
   const candidates = generateInsultCandidates(content);
 
-  // Get insults from DB
+  // Get insults from DB (single lightweight query)
   const groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
   if (!groups.length) return;
   
@@ -190,29 +190,32 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
 async function recordAutoBlame(message: Message, insult: string, originalContent: string, mode: 'blame' | 'both' = 'blame'): Promise<void> {
   if (!message.guildId || !message.client.user) return;
 
-  // Ensure FK rows exist
-  await prisma.user.upsert({
-    where: { id: message.author.id },
-    update: { username: message.author.username },
-    create: { id: message.author.id, username: message.author.username },
-  });
-  await prisma.user.upsert({
-    where: { id: message.client.user.id },
-    update: { username: message.client.user.username },
-    create: { id: message.client.user.id, username: message.client.user.username },
-  });
+  // Ensure FK rows exist and create record in a single transaction
+  const { record } = await prisma.$transaction(async (tx) => {
+    await tx.user.upsert({
+      where: { id: message.author.id },
+      update: { username: message.author.username },
+      create: { id: message.author.id, username: message.author.username },
+    });
+    await tx.user.upsert({
+      where: { id: message.client.user.id },
+      update: { username: message.client.user.username },
+      create: { id: message.client.user.id, username: message.client.user.username },
+    });
 
-  // Include the author's original message as the note (newlines collapsed; no truncation)
-  const note = originalContent.replace(/\n+/g, ' ').trim();
+    // Include the author's original message as the note (newlines collapsed; no truncation)
+    const note = originalContent.replace(/\n+/g, ' ').trim();
 
-  const record = await prisma.insult.create({
-    data: {
-      guildId: message.guildId,
-      userId: message.author.id,
-      blamerId: message.client.user.id,
-      insult: insult,
-      note: note.length > 0 ? note : null,
-    },
+    const created = await tx.insult.create({
+      data: {
+        guildId: message.guildId as string,
+        userId: message.author.id,
+        blamerId: message.client.user.id,
+        insult: insult,
+        note: note.length > 0 ? note : null,
+      },
+    });
+    return { record: created };
   });
 
   // Send public embed with reactions

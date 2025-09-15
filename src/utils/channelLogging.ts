@@ -46,9 +46,7 @@ export async function logGameplayAction(
     const guildId = 'guildId' in interactionOrGuild ? interactionOrGuild.guildId! : interactionOrGuild.id;
     const guild = 'guild' in interactionOrGuild ? interactionOrGuild.guild! : interactionOrGuild;
     
-    const setup = await prisma.setup.findUnique({
-      where: { guildId }
-    });
+    const setup = await prisma.setup.findUnique({ where: { guildId } });
 
     if (!setup?.insultsChannelId) {
       return; // Logging is disabled
@@ -86,9 +84,7 @@ export async function logSystemNotification(
   color: number = 0x5865F2
 ): Promise<void> {
   try {
-    const setup = await prisma.setup.findUnique({
-      where: { guildId: guild.id }
-    });
+    const setup = await prisma.setup.findUnique({ where: { guildId: guild.id } });
 
     if (!setup?.monitorChannelId) {
       return; // Logging is disabled

@@ -128,35 +128,42 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 
   // Allow spaces inside the insult phrase; no strict single-token rule
 
-  await prisma.user.upsert({
-    where: { id: target.id },
-    update: { username: target.username },
-    create: { id: target.id, username: target.username },
-  });
+  // Batch all DB work in a single transaction
+  const { record, totalBlames, insultCount, grouped } = await prisma.$transaction(async (tx) => {
+    await tx.user.upsert({
+      where: { id: target.id },
+      update: { username: target.username },
+      create: { id: target.id, username: target.username },
+    });
 
-  await prisma.user.upsert({
-    where: { id: blamer.id },
-    update: { username: blamer.username },
-    create: { id: blamer.id, username: blamer.username },
-  });
+    await tx.user.upsert({
+      where: { id: blamer.id },
+      update: { username: blamer.username },
+      create: { id: blamer.id, username: blamer.username },
+    });
 
-  const record = await prisma.insult.create({
-    data: {
-      guildId,
-      userId: target.id,
-      blamerId: blamer.id,
-      insult,
-      note: note && note.length > 0 ? note : null,
-    },
-  });
+    const created = await tx.insult.create({
+      data: {
+        guildId,
+        userId: target.id,
+        blamerId: blamer.id,
+        insult,
+        note: note && note.length > 0 ? note : null,
+      },
+    });
 
-  const totalBlames = await prisma.insult.count({ where: { guildId, userId: target.id } });
-  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
-  const grouped = await prisma.insult.groupBy({
-    by: ['insult'],
-    where: { guildId, userId: target.id },
-    _count: { insult: true },
-    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+    const [totalBlamesTx, insultCountTx, groupedTx] = await Promise.all([
+      tx.insult.count({ where: { guildId, userId: target.id } }),
+      tx.insult.count({ where: { guildId, insult } }),
+      tx.insult.groupBy({
+        by: ['insult'],
+        where: { guildId, userId: target.id },
+        _count: { insult: true },
+        orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+      })
+    ]);
+
+    return { record: created, totalBlames: totalBlamesTx, insultCount: insultCountTx, grouped: groupedTx };
   });
   const distinctSummary = formatInsultFrequencyPairs(grouped);
 
@@ -227,19 +234,21 @@ export interface BlameRecordShape {
 export async function buildBlameEmbedFromRecord(type: BlameEmbedType, record: BlameRecordShape, guildName?: string | null): Promise<EmbedBuilder> {
   const { guildId, userId, blamerId, insult, note, createdAt, id } = record;
 
-  const [targetUser, blamerUser] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } }),
-    prisma.user.findUnique({ where: { id: blamerId }, select: { id: true, username: true } }),
-  ]);
-
-  const totalBlames = await prisma.insult.count({ where: { guildId, userId } });
-  const insultCount = await prisma.insult.count({ where: { guildId, insult } });
-
-  const grouped = await prisma.insult.groupBy({
-    by: ['insult'],
-    where: { guildId, userId },
-    _count: { insult: true },
-    orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+  // Batch all lookups and aggregations in one transaction
+  const { targetUser, blamerUser, totalBlames, insultCount, grouped } = await prisma.$transaction(async (tx) => {
+    const [targetUserTx, blamerUserTx, totalBlamesTx, insultCountTx, groupedTx] = await Promise.all([
+      tx.user.findUnique({ where: { id: userId }, select: { id: true, username: true } }),
+      tx.user.findUnique({ where: { id: blamerId }, select: { id: true, username: true } }),
+      tx.insult.count({ where: { guildId, userId } }),
+      tx.insult.count({ where: { guildId, insult } }),
+      tx.insult.groupBy({
+        by: ['insult'],
+        where: { guildId, userId },
+        _count: { insult: true },
+        orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
+      })
+    ]);
+    return { targetUser: targetUserTx, blamerUser: blamerUserTx, totalBlames: totalBlamesTx, insultCount: insultCountTx, grouped: groupedTx };
   });
   const distinctSummary = formatInsultFrequencyPairs(grouped);
 

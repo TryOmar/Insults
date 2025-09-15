@@ -22,23 +22,29 @@ async function fetchRankData(guildId: string, page: number, pageSize: number, da
   const dateFilter = getDateFilter(days);
   const whereClause = { guildId, ...dateFilter };
   
-  const [totalCount, rows] = await Promise.all([
-    prisma.insult.groupBy({ by: ['userId'], where: whereClause }).then(rows => rows.length),
-    prisma.insult.groupBy({
-      by: ['userId'],
-      where: whereClause,
-      _count: { userId: true },
-      orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    })
-  ]);
+  // Batch leaderboard and user lookups in a single transaction
+  const { totalCount, rows, users } = await prisma.$transaction(async (tx) => {
+    const [totalCountTx, rowsTx] = await Promise.all([
+      tx.insult.groupBy({ by: ['userId'], where: whereClause }).then(rows => rows.length),
+      tx.insult.groupBy({
+        by: ['userId'],
+        where: whereClause,
+        _count: { userId: true },
+        orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      })
+    ]);
 
-  // Fetch usernames for all users
-  const userIds = rows.map(row => row.userId);
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, username: true }
+    const userIds = rowsTx.map(row => row.userId);
+    const usersTx = userIds.length
+      ? await tx.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, username: true }
+        })
+      : [];
+
+    return { totalCount: totalCountTx, rows: rowsTx, users: usersTx };
   });
 
   const userMap = new Map(users.map(u => [u.id, u.username]));

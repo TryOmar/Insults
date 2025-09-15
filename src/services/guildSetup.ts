@@ -30,26 +30,15 @@ export class GuildSetupService {
   public async ensureGuildSetup(guildId: string, guildName?: string): Promise<boolean> {
     try {
       return await withRetry(async () => {
-        // Check if setup already exists for this guild
-        let setup = await prisma.setup.findUnique({ where: { guildId } });
-        
-        if (!setup) {
-          // Auto-bootstrap setup with radar in blame mode
-          setup = await prisma.setup.create({
-            data: {
-              guildId,
-              radarMode: 'blame',
-            } as any, // Type assertion until Prisma client is regenerated
-          });
-          
-          if (guildName) {
-            console.log(`✅ Auto-setup created for guild: ${guildName} (${guildId})`);
-          }
-          return true;
-        }
-        
+        // Ensure a setup row exists using upsert to avoid separate read/write
+        await prisma.setup.upsert({
+          where: { guildId },
+          update: {},
+          create: { guildId, radarMode: 'blame' } as any,
+        });
+
         if (guildName) {
-          console.log(`ℹ️ Setup already exists for guild: ${guildName} (${guildId})`);
+          console.log(`ℹ️ Setup ensured for guild: ${guildName} (${guildId})`);
         }
         return true;
       }, `ensureGuildSetup for ${guildName || guildId}`);
