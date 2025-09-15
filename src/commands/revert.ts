@@ -55,73 +55,95 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     | { kind: 'failed'; id: number };
 
   const results: Result[] = [];
+  // Batch-fetch archives for the requested original IDs
+  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: ids } } });
 
+  // Permission filtering
+  const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
+  const allowedByOriginalId = new Map<number, any>(allowed.map((a: any) => [a.originalInsultId, a]));
+
+  // Mark not found and forbidden
   for (const id of ids) {
-    const found = await (prisma as any).archive.findUnique({ where: { originalInsultId: id } });
-    if (!found) {
+    const a = archives.find((x: any) => x.originalInsultId === id);
+    if (!a) {
       results.push({ kind: 'not_found', id });
       continue;
     }
-    // Permission: allow original blamer or admin
-    if (found.blamerId !== invokerId && !isAdmin) {
+    if (a.blamerId !== invokerId && !isAdmin) {
       results.push({ kind: 'forbidden', id });
-      continue;
-    }
-    try {
-      // Create the restored insult record
-      const restoredInsult = await prisma.insult.create({
-        data: {
-          guildId: found.guildId,
-          userId: found.userId,
-          blamerId: found.blamerId,
-          insult: found.insult,
-          note: found.note ?? null,
-          createdAt: new Date(found.createdAt),
-        }
-      });
-      
-      // Delete the archived record
-      await (prisma as any).archive.delete({ where: { originalInsultId: id } });
-      
-      results.push({ 
-        kind: 'restored', 
-        id: restoredInsult.id, // Use the new ID from the restored record
-        originalId: id, // Keep track of the original insult ID
-        insult: found.insult, 
-        userId: found.userId, 
-        blamerId: found.blamerId, 
-        note: found.note ?? null, 
-        createdAt: new Date(found.createdAt) 
-      });
-
-      // Create embed for this specific revert action
-      const revertEmbed = new EmbedBuilder()
-        .setTitle(`Restored Blame #${restoredInsult.id}`)
-        .addFields(
-          { name: '**New Blame ID**', value: `#${restoredInsult.id}`, inline: true },
-          { name: '**Original ID**', value: `#${id}`, inline: true },
-          { name: '**Insult**', value: found.insult, inline: true },
-          { name: '**Note**', value: found.note ?? '—', inline: false },
-          { name: '**Insulter**', value: userMention(found.userId), inline: true },
-          { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
-          { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
-        )
-        .setColor(0xF39C12)
-        .setTimestamp(new Date(found.createdAt));
-
-      // Log the gameplay action
-      await logGameplayAction(interaction, {
-        action: 'revert',
-        target: { id: found.userId } as any,
-        blamer: { id: found.blamerId } as any,
-        unblamer: interaction.user,
-        blameId: restoredInsult.id,
-        embed: revertEmbed
-      });
-    } catch {
-      results.push({ kind: 'failed', id });
     }
   }
+
+  // Create insults for allowed in parallel to obtain new IDs
+  const creations = await Promise.allSettled(allowed.map((a: any) => prisma.insult.create({
+    data: {
+      guildId: a.guildId,
+      userId: a.userId,
+      blamerId: a.blamerId,
+      insult: a.insult,
+      note: a.note ?? null,
+      createdAt: new Date(a.createdAt),
+    }
+  })));
+
+  // Map created results by original id
+  const createdByOriginal = new Map<number, any>();
+  creations.forEach((res, idx) => {
+    const origId = allowed[idx].originalInsultId;
+    if (res.status === 'fulfilled') {
+      createdByOriginal.set(origId, res.value);
+    }
+  });
+
+  // Bulk delete archives for successfully created ones
+  const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
+  if (originalsToDelete.length > 0) {
+    await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete } } });
+  }
+
+  // Collect results and log in parallel
+  const restoredForLogging: { restored: any; archive: any }[] = [];
+  for (const oid of originalsToDelete) {
+    const archive = allowedByOriginalId.get(oid);
+    const restoredInsult = createdByOriginal.get(oid);
+    if (!archive || !restoredInsult) continue;
+    results.push({
+      kind: 'restored',
+      id: restoredInsult.id,
+      originalId: oid,
+      insult: archive.insult,
+      userId: archive.userId,
+      blamerId: archive.blamerId,
+      note: archive.note ?? null,
+      createdAt: new Date(archive.createdAt)
+    });
+    restoredForLogging.push({ restored: restoredInsult, archive });
+  }
+
+  await Promise.allSettled(restoredForLogging.map(({ restored, archive }) => {
+    const revertEmbed = new EmbedBuilder()
+      .setTitle(`Restored Blame #${restored.id}`)
+      .addFields(
+        { name: '**New Blame ID**', value: `#${restored.id}`, inline: true },
+        { name: '**Original ID**', value: `#${archive.originalInsultId}`, inline: true },
+        { name: '**Insult**', value: archive.insult, inline: true },
+        { name: '**Note**', value: archive.note ?? '—', inline: false },
+        { name: '**Insulter**', value: userMention(archive.userId), inline: true },
+        { name: '**Blamer**', value: userMention(archive.blamerId), inline: true },
+        { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(archive.createdAt)), inline: false },
+      )
+      .setColor(0xF39C12)
+      .setTimestamp(new Date(archive.createdAt));
+
+    return logGameplayAction(interaction, {
+      action: 'revert',
+      target: { id: archive.userId } as any,
+      blamer: { id: archive.blamerId } as any,
+      unblamer: interaction.user,
+      blameId: restored.id,
+      embed: revertEmbed
+    });
+  }));
 
   const restored = results.filter(r => r.kind === 'restored') as Extract<Result, { kind: 'restored' }> [];
   const notFound = results.filter(r => r.kind === 'not_found') as Extract<Result, { kind: 'not_found' }> [];
