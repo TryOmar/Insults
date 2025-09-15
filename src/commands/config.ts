@@ -27,7 +27,8 @@ export const data = new SlashCommandBuilder()
         { name: 'Set Blamer Role', value: 'blamer-role' },
         { name: 'Set Frozen Role', value: 'frozen-role' },
         { name: 'Set Insulter Role', value: 'insulter-role' },
-        { name: 'Set Insulter Days', value: 'insulter-days' }
+        { name: 'Set Insulter Days', value: 'insulter-days' },
+        { name: 'Set Radar Mode', value: 'radar-mode' }
       )
   )
   .addRoleOption(option =>
@@ -50,6 +51,18 @@ export const data = new SlashCommandBuilder()
       .setDescription('Channel for logging (for monitor/insults channels)')
       .setRequired(false)
       .addChannelTypes(ChannelType.GuildText)
+  )
+  .addStringOption(option =>
+    option
+      .setName('radar_mode')
+      .setDescription('Radar mode to set (for radar-mode action)')
+      .setRequired(false)
+      .addChoices(
+        { name: 'Off - Radar disabled', value: 'off' },
+        { name: 'Blame - Only blames users', value: 'blame' },
+        { name: 'Delete - Only deletes messages', value: 'delete' },
+        { name: 'Both - Blames and deletes together', value: 'both' }
+      )
   );
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
@@ -66,6 +79,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const role = interaction.options.getRole('role', false);
   const days = interaction.options.getInteger('days', false);
   const channel = interaction.options.getChannel('channel', false);
+  const radarMode = interaction.options.getString('radar_mode', false);
 
   try {
     switch (action) {
@@ -93,6 +107,16 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         break;
       case 'insults-channel':
         await handleInsultsChannel(interaction, guildId, channel);
+        break;
+      case 'radar-mode':
+        if (radarMode === null) {
+          await safeInteractionReply(interaction, { 
+            content: 'Please select a radar mode.', 
+            flags: MessageFlags.Ephemeral 
+          });
+          return;
+        }
+        await handleRadarMode(interaction, guildId, radarMode);
         break;
       case 'view':
         await handleViewConfig(interaction, guildId);
@@ -320,9 +344,52 @@ async function handleViewConfig(interaction: ChatInputCommandInteraction, guildI
       `<#${insultsChannelId}>` : 'Not set (gameplay logging disabled)';
     console.log('Insults channel ID:', insultsChannelId, 'Display:', insultsChannel);
     embed.addFields({ name: '🎮 Insults Channel', value: insultsChannel, inline: true });
+
+    // Radar Mode
+    const radarMode = (setup as any).radarMode || 'off';
+    const radarDescriptions = {
+      'off': 'Disabled',
+      'blame': 'Blame mode (only blames users)',
+      'delete': 'Delete mode (only deletes messages)',
+      'both': 'Both mode (blames and deletes together)'
+    };
+    const radarDisplay = radarDescriptions[radarMode as keyof typeof radarDescriptions] || 'Disabled';
+    console.log('Radar mode:', radarMode, 'Display:', radarDisplay);
+    embed.addFields({ name: '📡 Radar Mode', value: radarDisplay, inline: true });
   }
 
   await safeInteractionReply(interaction, { embeds: [embed] });
+}
+
+async function handleRadarMode(interaction: ChatInputCommandInteraction, guildId: string, radarMode: string) {
+  const setup = await prisma.setup.upsert({
+    where: { guildId },
+    update: { 
+      radarMode: radarMode,
+      updatedAt: new Date()
+    } as any, // Type assertion until Prisma client is regenerated
+    create: { 
+      guildId, 
+      radarMode: radarMode 
+    } as any // Type assertion until Prisma client is regenerated
+  });
+
+  const modeDescriptions = {
+    'off': 'disabled',
+    'blame': 'set to blame mode (only blames users)',
+    'delete': 'set to delete mode (only deletes messages)',
+    'both': 'set to both mode (blames and deletes together)'
+  };
+
+  const status = modeDescriptions[radarMode as keyof typeof modeDescriptions] || 'disabled';
+  const embed = new EmbedBuilder()
+    .setTitle('✅ Radar Mode Updated')
+    .setDescription(`Radar is now ${status} for this server.`)
+    .setColor(0x00ff00)
+    .setTimestamp();
+
+  await safeInteractionReply(interaction, { embeds: [embed] });
+  await logToMonitorChannel(interaction, `Radar ${status} by ${interaction.user.tag}`);
 }
 
 async function logToMonitorChannel(interaction: ChatInputCommandInteraction, message: string) {

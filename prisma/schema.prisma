@@ -35,7 +35,7 @@ model Insult {
 
 model Setup {
   guildId          String   @id
-  radarEnabled     Boolean  @default(false)
+  radarMode        String   @default("off") // "off", "blame", "delete", "both"
   createdAt        DateTime @default(now())
   blamerRoleId     String?
   frozenRoleId     String?

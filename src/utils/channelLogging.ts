@@ -9,7 +9,7 @@ import {
 import { prisma } from '../database/client.js';
 
 export interface GameplayLogData {
-  action: 'blame' | 'unblame' | 'revert' | 'radar' | 'insulter-role-update';
+  action: 'blame' | 'unblame' | 'revert' | 'radar' | 'radar-blame' | 'radar-delete' | 'radar-both' | 'insulter-role-update';
   target?: User;
   blamer?: User;
   unblamer?: User;
@@ -22,7 +22,9 @@ export interface GameplayLogData {
   embed?: EmbedBuilder;
   addReactions?: boolean;
   // Radar state
-  radarEnabled?: boolean;
+  radarMode?: string;
+  // Radar specific fields
+  originalMessage?: string;
 }
 
 /**
@@ -152,12 +154,68 @@ function createGameplayEmbed(data: GameplayLogData): EmbedBuilder {
       break;
 
     case 'radar':
-      const radarStatus = data.radarEnabled ? 'enabled' : 'disabled';
-      const radarEmoji = data.radarEnabled ? '🟢' : '🔴';
+      const radarMode = data.radarMode || 'off';
+      const radarDescriptions = {
+        'off': { status: 'disabled', emoji: '🔴', color: 0xff0000 },
+        'blame': { status: 'set to blame mode', emoji: '🟡', color: 0xffff00 },
+        'delete': { status: 'set to delete mode', emoji: '🟠', color: 0xff8800 },
+        'both': { status: 'set to both mode', emoji: '🟢', color: 0x00ff00 }
+      };
+      const radarInfo = radarDescriptions[radarMode as keyof typeof radarDescriptions] || radarDescriptions.off;
+      
       embed
-        .setTitle(`${radarEmoji} Radar ${radarStatus === 'enabled' ? 'Enabled' : 'Disabled'}`)
-        .setDescription(`**${data.blamer?.tag}** ${radarStatus} automatic insult detection`)
-        .setColor(data.radarEnabled ? 0x00ff00 : 0xff0000);
+        .setTitle(`${radarInfo.emoji} Radar ${radarMode === 'off' ? 'Disabled' : 'Mode Changed'}`)
+        .setDescription(`**${data.blamer?.tag}** ${radarInfo.status} automatic insult detection`)
+        .setColor(radarInfo.color);
+      break;
+
+    case 'radar-blame':
+      // For radar-blame, we use the custom embed passed in (which is the normal blame embed)
+      if (data.embed) {
+        return data.embed;
+      }
+      // Fallback if no custom embed provided
+      embed
+        .setTitle('🚨 Radar Blame Recorded')
+        .setDescription(`**${data.target?.tag}** was automatically blamed by radar`)
+        .setColor(0x00B894) // Teal
+        .addFields(
+          { name: 'Insult', value: data.insult || 'N/A', inline: true },
+          { name: 'Original Message', value: data.originalMessage ? `||${data.originalMessage.replace(/\n+/g, ' ').trim()}||` : 'N/A', inline: false }
+        );
+      break;
+
+    case 'radar-delete':
+      // For radar-delete, we use the custom embed passed in (which is the delete embed)
+      if (data.embed) {
+        return data.embed;
+      }
+      // Fallback if no custom embed provided
+      embed
+        .setTitle('🗑️ Radar Message Deleted')
+        .setDescription(`Message from **${data.target?.tag}** was automatically deleted by radar`)
+        .setColor(0xFF6B6B) // Light red
+        .addFields(
+          { name: 'Insult', value: data.insult || 'N/A', inline: true },
+          { name: 'Original Message', value: data.originalMessage ? `||${data.originalMessage.replace(/\n+/g, ' ').trim()}||` : 'N/A', inline: false }
+        );
+      break;
+
+    case 'radar-both':
+      // For radar-both, we use the custom embed passed in (which is the blame embed with deletion note)
+      if (data.embed) {
+        return data.embed;
+      }
+      // Fallback if no custom embed provided
+      embed
+        .setTitle('⚡ Radar Action Taken')
+        .setDescription(`**${data.target?.tag}** was automatically blamed and their message deleted by radar`)
+        .setColor(0xFF8C00) // Dark orange
+        .addFields(
+          { name: 'Insult', value: data.insult || 'N/A', inline: true },
+          { name: 'Original Message', value: data.originalMessage ? `||${data.originalMessage.replace(/\n+/g, ' ').trim()}||` : 'N/A', inline: false },
+          { name: 'Actions Taken', value: '• Blame record created\n• Message deleted', inline: false }
+        );
       break;
 
     case 'insulter-role-update':

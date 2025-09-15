@@ -32,12 +32,12 @@ export class GuildSetupService {
       let setup = await prisma.setup.findUnique({ where: { guildId } });
       
       if (!setup) {
-        // Auto-bootstrap setup with radar enabled
+        // Auto-bootstrap setup with radar in blame mode
         setup = await prisma.setup.create({
           data: {
             guildId,
-            radarEnabled: true,
-          },
+            radarMode: 'blame',
+          } as any, // Type assertion until Prisma client is regenerated
         });
         
         if (guildName) {
@@ -59,18 +59,29 @@ export class GuildSetupService {
   }
 
   /**
-   * Check if radar is enabled for a guild
+   * Get radar mode for a guild
+   * @param guildId - The Discord guild ID
+   * @returns Promise<string> - radar mode ("off", "blame", "delete", "both")
+   */
+  public async getRadarMode(guildId: string): Promise<string> {
+    try {
+      const setup = await prisma.setup.findUnique({ where: { guildId } });
+      // Type assertion to handle schema change until Prisma client is regenerated
+      return (setup as any)?.radarMode ?? 'off';
+    } catch (error) {
+      console.warn(`⚠️ Failed to check radar mode for guild ${guildId}:`, error);
+      return 'off';
+    }
+  }
+
+  /**
+   * Check if radar is enabled for a guild (for backward compatibility)
    * @param guildId - The Discord guild ID
    * @returns Promise<boolean> - true if radar is enabled, false otherwise
    */
   public async isRadarEnabled(guildId: string): Promise<boolean> {
-    try {
-      const setup = await prisma.setup.findUnique({ where: { guildId } });
-      return setup?.radarEnabled ?? false;
-    } catch (error) {
-      console.warn(`⚠️ Failed to check radar status for guild ${guildId}:`, error);
-      return false;
-    }
+    const mode = await this.getRadarMode(guildId);
+    return mode !== 'off';
   }
 
   /**
