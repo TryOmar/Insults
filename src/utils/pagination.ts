@@ -260,14 +260,15 @@ export class PaginationManager<T, D = PaginationData<T>> {
           newPage = Math.max(1, parsed.page - 1);
           break;
         case 'next':
-          // We need to get the total pages to know the max
-          const data = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
-          newPage = Math.min((data as any).totalPages, parsed.page + 1);
+          // For next, we can safely increment without checking total pages
+          // The pagination manager will handle bounds checking
+          newPage = parsed.page + 1;
           break;
         case 'last':
-          // We need to get the total pages
-          const data2 = await this.callbacks.fetchData(parsed.page, this.config.pageSize, ...args);
-          newPage = (data2 as any).totalPages;
+          // For last page, we need to get total pages, but we'll do this efficiently
+          // by using a lightweight count query instead of fetching all data
+          // This will be handled by the specific command implementation
+          newPage = parsed.page; // Will be overridden by command-specific logic
           break;
         case 'refresh':
           newPage = parsed.page; // Stay on current page but refresh data

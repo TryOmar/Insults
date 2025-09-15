@@ -97,36 +97,41 @@ export const execute = withSpamProtection(executeCommand);
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
   return withRetry(async () => {
-    // Simplified query - only get essential data for the embed
-    const [totalRecorded, groupedAll, distinctInsultsTotal] = await Promise.all([
-      prisma.insult.count({ where: { guildId } }),
-      prisma.insult.groupBy({
+    // Use a single transaction to batch all queries
+    return await prisma.$transaction(async (tx) => {
+      // Get the grouped insults with pagination in one query
+      const groupedAll = await tx.insult.groupBy({
         by: ['insult'],
         where: { guildId },
         _count: { insult: true },
         orderBy: [{ _count: { insult: 'desc' } }, { insult: 'asc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-      }),
-      prisma.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length)
-    ]);
+      });
 
-    // Simple items - just insult and count (no user lookups needed)
-    const items = groupedAll.map(g => ({
-      insult: g.insult,
-      count: g._count.insult
-    }));
+      // Get total counts in parallel within the same transaction
+      const [totalRecorded, distinctInsultsTotal] = await Promise.all([
+        tx.insult.count({ where: { guildId } }),
+        tx.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length)
+      ]);
 
-    const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
+      // Simple items - just insult and count (no user lookups needed)
+      const items = groupedAll.map(g => ({
+        insult: g.insult,
+        count: g._count.insult
+      }));
 
-    return {
-      items,
-      totalCount: distinctInsultsTotal,
-      currentPage: page,
-      totalPages,
-      totalRecorded,
-      totalDistinctOnPage: groupedAll.length
-    } as any;
+      const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
+
+      return {
+        items,
+        totalCount: distinctInsultsTotal,
+        currentPage: page,
+        totalPages,
+        totalRecorded,
+        totalDistinctOnPage: groupedAll.length
+      } as any;
+    });
   }, 'fetchGeneralPage');
 }
 
@@ -142,46 +147,49 @@ async function fetchWordPage(guildId: string, word: string, page: number, pageSi
   return withRetry(async () => {
     const where = { guildId, insult: word } as const;
     
-    // Simplified query - only get essential data
-    const [totalCount, distinctUsersCount, entries] = await Promise.all([
-      prisma.insult.count({ where }),
-      prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
-      prisma.insult.findMany({ 
-        where, 
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], 
-        skip: (page - 1) * pageSize, 
-        take: pageSize,
-        select: { id: true, userId: true, createdAt: true } // Only select needed fields
-      }),
-    ]);
+    // Use a single transaction to batch all queries
+    return await prisma.$transaction(async (tx) => {
+      // Get all data in parallel within the same transaction
+      const [totalCount, distinctUsersCount, entries] = await Promise.all([
+        tx.insult.count({ where }),
+        tx.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
+        tx.insult.findMany({ 
+          where, 
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], 
+          skip: (page - 1) * pageSize, 
+          take: pageSize,
+          select: { id: true, userId: true, createdAt: true } // Only select needed fields
+        }),
+      ]);
 
-    // Simple metadata without user lookups
-    const metadata = {
-      total: totalCount,
-      users: distinctUsersCount,
-      top: '—', // Simplified - no user lookup
-    };
+      // Simple metadata without user lookups
+      const metadata = {
+        total: totalCount,
+        users: distinctUsersCount,
+        top: '—', // Simplified - no user lookup
+      };
 
-    // Simple rows without username lookup
-    const rows = entries.map(e => [
-      String(e.id),
-      e.userId, // Just show user ID instead of username
-      '\u200E' + getShortTime(new Date(e.createdAt)),
-    ]);
+      // Simple rows without username lookup
+      const rows = entries.map(e => [
+        String(e.id),
+        e.userId, // Just show user ID instead of username
+        '\u200E' + getShortTime(new Date(e.createdAt)),
+      ]);
 
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+      const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-    return {
-      items: rows,
-      totalCount,
-      currentPage: page,
-      totalPages,
-      metadata,
-      word
-    } as PaginationData<any> & {
-      metadata: any;
-      word: string;
-    };
+      return {
+        items: rows,
+        totalCount,
+        currentPage: page,
+        totalPages,
+        metadata,
+        word
+      } as PaginationData<any> & {
+        metadata: any;
+        word: string;
+      };
+    });
   }, 'fetchWordPage');
 }
 
@@ -329,14 +337,21 @@ export async function handleButton(customId: string, interaction: ButtonInteract
       newPage = Math.max(1, sessionParsed.page - 1);
       break;
     case 'next':
-      // Get current data to determine total pages
-      const currentData = await fetchInsultsData(scope, sessionParsed.page, PAGE_SIZE);
-      newPage = Math.min(currentData.totalPages, sessionParsed.page + 1);
+      // For next, we can safely increment without checking total pages
+      // The pagination manager will handle bounds checking
+      newPage = sessionParsed.page + 1;
       break;
     case 'last':
-      // Get current data to determine total pages
-      const lastData = await fetchInsultsData(scope, sessionParsed.page, PAGE_SIZE);
-      newPage = lastData.totalPages;
+      // For last page, we need to get total pages, but we'll do this efficiently
+      // by using a lightweight count query instead of fetching all data
+      const totalCount = await withRetry(async () => {
+        if (scope.mode === 'word') {
+          return await prisma.insult.count({ where: { guildId: scope.guildId, insult: scope.word } });
+        } else {
+          return await prisma.insult.groupBy({ by: ['insult'], where: { guildId: scope.guildId } }).then(g => g.length);
+        }
+      }, 'getTotalCount');
+      newPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
       break;
     case 'refresh':
       newPage = sessionParsed.page; // Stay on current page but refresh data
