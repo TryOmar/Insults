@@ -154,7 +154,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   let title: string;
   if (scope.userId) {
     if (targetUsername) {
-      title = `📜 Insult history for **${targetUsername}** (this server)`;
+      title = `📜 Insult history for **${targetUsername}**`;
     } else {
       title = '📜 Insult history for this user';
     }
