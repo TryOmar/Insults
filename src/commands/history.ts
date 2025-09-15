@@ -137,8 +137,8 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   const rows = entries.map((e) => [
     String(e.id),
     scope.userId 
-      ? (blamerMap.get(e.blamerId) ?? 'Unknown') // Show blamer when filtering by user
-      : (insultedUserMap.get(e.userId) ?? e.userId), // Show insulter when showing all
+      ? (blamerMap.get(e.blamerId) ?? e.blamerId) // Prefer username, fallback to ID
+      : (insultedUserMap.get(e.userId) ?? e.userId), // Prefer username, fallback to ID
     e.insult,
   ]);
   const config: TableConfig = {
@@ -163,7 +163,8 @@ function buildHistoryEmbed(data: PaginationData<any> & {
 
   const fields: { name: string; value: string; inline?: boolean }[] = [];
   if (scope.userId) {
-    fields.push({ name: 'User', value: `<@${scope.userId}> (${targetUsername ?? scope.userId})`, inline: false });
+    // Show username when available; otherwise fall back to the raw user ID
+    fields.push({ name: 'User', value: (targetUsername ? `@${targetUsername}` : scope.userId), inline: false });
   }
   fields.push(
     { name: 'Total Blames', value: String(totalCount), inline: true },
