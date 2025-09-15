@@ -53,13 +53,6 @@ const COMMAND_INFO = {
     userStory: '**User Story:** As a user, I want to see complete details of a specific blame record including who blamed whom, when, and any notes for full context.',
     details: '**Parameters:**\n• `id` (required) - The blame record ID\n\n**Features:**\n• Shows complete record information\n• Works with both active and archived records\n• Displays all metadata (user, blamer, time, note)\n• Adds reactions for community feedback\n• Handles archived records with special formatting'
   },
-  radar: {
-    name: 'radar',
-    description: 'Configure automatic insult detection mode (ADMIN ONLY)',
-    usage: '`/config action:Set Radar Mode radar_mode:<mode>`',
-    userStory: '**User Story:** As a server admin, I want to configure automatic scanning of messages for insults so the bot can help monitor the server automatically with different behaviors.',
-    details: '**Parameters:**\n• `action` (required) - Set to "Set Radar Mode"\n• `radar_mode` (required) - Choose from: off, blame, delete, both\n\n**Permissions:**\n• Requires "Manage Server" permission\n\n**Modes:**\n• **Off** - Radar disabled\n• **Blame** - Only blames users (creates blame records)\n• **Delete** - Only deletes messages (sends DM to user)\n• **Both** - Blames and deletes together\n\n**Features:**\n• Automatically scans messages for insult patterns\n• Configurable behavior per server\n• Actions logged in monitor channel\n• Ephemeral response for privacy'
-  },
   archive: {
     name: 'archive',
     description: 'Show archived (unblamed) records',
@@ -86,7 +79,7 @@ const COMMAND_INFO = {
     description: 'Configure bot settings for this server',
     usage: '`/config action:<choice> [role/channel/days]`',
     userStory: '**User Story:** As a server administrator, I want to configure role-based permissions and logging channels so I can control who can use the bot and where notifications are sent.',
-    details: '**Actions:**\n• `Set Blamer Role` + @role (or leave empty to disable) - Set role for mutating commands\n• `Set Frozen Role` + @role (or leave empty to disable) - Set role that blocks all commands\n• `Set Insulter Role` + @role (or leave empty to disable) - Set auto-assigned top insulter role\n• `Set Insulter Days` + days - Set time window for insulter calculation\n• `Set Monitor Channel` + #channel (or leave empty to disable) - Set system notifications channel\n• `Set Insults Channel` + #channel (or leave empty to disable) - Set gameplay action logging channel\n• `Set Radar Mode` + radar_mode - Set automatic insult detection mode\n• `View Configuration` - View current configuration\n\n**Radar Modes:**\n• **Off** - Radar disabled\n• **Blame** - Only blames users (creates blame records)\n• **Delete** - Only deletes messages (sends DM to user)\n• **Both** - Blames and deletes together\n\n**Permissions:**\n• Requires "Manage Server" permission\n\n**Features:**\n• Role-based access control for commands\n• Automatic top insulter role assignment\n• Configurable logging channels\n• Automatic insult detection with multiple modes\n• Time-based insulter calculations\n• Easy configuration management\n• Leave role/channel empty to disable features'
+    details: '**Actions:**\n• `Set Blamer Role` + @role - Set role for mutating commands\n• `Set Frozen Role` + @role - Set role that blocks all commands\n• `Set Insulter Role` + @role - Set auto-assigned top insulter role\n• `Set Insulter Days` + days - Set time window for insulter calculation\n• `Set Monitor Channel` + #channel - Set system notifications channel\n• `Set Insults Channel` + #channel - Set gameplay action logging channel\n• `Set Radar Mode` + radar_mode - Set automatic insult detection mode\n• `View Configuration` - View current configuration\n\n**Radar Modes:**\n• **Off** - Radar disabled\n• **Blame** - Only blames users\n• **Delete** - Only deletes messages\n• **Both** - Blames and deletes together\n\n**Permissions:**\n• Requires "Manage Server" permission\n\n**Features:**\n• Role-based access control\n• Automatic top insulter role assignment\n• Configurable logging channels\n• Automatic insult detection with multiple modes\n• Time-based insulter calculations'
   },
   'anti-spam': {
     name: 'anti-spam',
@@ -120,6 +113,12 @@ function createMainHelpEmbed(): EmbedBuilder {
         inline: false
       }
     );
+
+  embed.addFields({
+    name: '🚀 System Features',
+    value: '**Roles:** Blamer, Frozen, Insulter\n**Channels:** Monitor (notifications), Insults (logging)\n**Radar System:** Auto insult detection: Off, Blame, Delete, Both\n**Anti-Spam:** Protection with cooldowns & violation tracking\n**Data Management:** Archive, blame restore, full statistics',
+    inline: false
+  });
 
   embed.addFields({
     name: '🔍 Get Detailed Help',
