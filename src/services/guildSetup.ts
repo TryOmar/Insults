@@ -1,4 +1,5 @@
 import { prisma } from '../database/client.js';
+import { withRetry } from '../database/retry.js';
 
 /**
  * Service for managing guild setup and configuration
@@ -28,28 +29,31 @@ export class GuildSetupService {
    */
   public async ensureGuildSetup(guildId: string, guildName?: string): Promise<boolean> {
     try {
-      // Check if setup already exists for this guild
-      let setup = await prisma.setup.findUnique({ where: { guildId } });
-      
-      if (!setup) {
-        // Auto-bootstrap setup with radar in blame mode
-        setup = await prisma.setup.create({
-          data: {
-            guildId,
-            radarMode: 'blame',
-          } as any, // Type assertion until Prisma client is regenerated
-        });
+      return await withRetry(async () => {
+        // Check if setup already exists for this guild
+        let setup = await prisma.setup.findUnique({ where: { guildId } });
+        
+        if (!setup) {
+          // Auto-bootstrap setup with radar in blame mode
+          setup = await prisma.setup.create({
+            data: {
+              guildId,
+              radarMode: 'blame',
+            } as any, // Type assertion until Prisma client is regenerated
+          });
+          
+          if (guildName) {
+            console.log(`✅ Auto-setup created for guild: ${guildName} (${guildId})`);
+          }
+          return true;
+        }
         
         if (guildName) {
-          console.log(`✅ Auto-setup created for guild: ${guildName} (${guildId})`);
+          console.log(`ℹ️ Setup already exists for guild: ${guildName} (${guildId})`);
         }
         return true;
-      }
+      }, `ensureGuildSetup for ${guildName || guildId}`);
       
-      if (guildName) {
-        console.log(`ℹ️ Setup already exists for guild: ${guildName} (${guildId})`);
-      }
-      return true;
     } catch (error) {
       if (guildName) {
         console.warn(`⚠️ Failed to setup guild ${guildName} (${guildId}):`, error);

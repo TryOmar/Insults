@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, EmbedBuilder, MessageFlags, SlashCommandBuilder, userMention } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { withRetry } from '../database/retry.js';
 import { getShortTime } from '../utils/time.js';
 import { renderTable, TableConfig } from '../utils/tableRenderer.js';
 import { PaginationManager, createStandardCustomId, parseStandardCustomId, PaginationData } from '../utils/pagination.js';
@@ -95,8 +96,9 @@ export const execute = withSpamProtection(executeCommand);
 
 
 async function fetchGeneralPage(guildId: string, page: number, pageSize: number): Promise<PaginationData<any>> {
-  try {
-    const [totalRecorded, groupedAll] = await Promise.all([
+  return withRetry(async () => {
+    // Simplified query - only get essential data for the embed
+    const [totalRecorded, groupedAll, distinctInsultsTotal] = await Promise.all([
       prisma.insult.count({ where: { guildId } }),
       prisma.insult.groupBy({
         by: ['insult'],
@@ -106,34 +108,16 @@ async function fetchGeneralPage(guildId: string, page: number, pageSize: number)
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
+      prisma.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length)
     ]);
 
-    const distinctInsultsTotal = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } }).then(g => g.length);
+    // Simple items - just insult and count (no user lookups needed)
+    const items = groupedAll.map(g => ({
+      insult: g.insult,
+      count: g._count.insult
+    }));
 
-  // For each insult in page, compute first, last, and top blamer
-  const details = await Promise.all(groupedAll.map(async (g) => {
-    const insult = g.insult;
-    const [firstRow, lastRow, topBlamer] = await Promise.all([
-      prisma.insult.findFirst({ where: { guildId, insult }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { blamerId: true } }),
-      prisma.insult.findFirst({ where: { guildId, insult }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { blamerId: true } }),
-      prisma.insult.groupBy({ by: ['blamerId'], where: { guildId, insult }, _count: { blamerId: true }, orderBy: [{ _count: { blamerId: 'desc' } }, { blamerId: 'asc' }], take: 1 }),
-    ]);
-    return { insult, count: g._count.insult, firstBlamerId: firstRow?.blamerId ?? null, lastBlamerId: lastRow?.blamerId ?? null, topBlamerId: topBlamer[0]?.blamerId ?? null };
-  }));
-
-  const userIds = Array.from(new Set(details.flatMap(d => [d.firstBlamerId, d.lastBlamerId, d.topBlamerId]).filter(Boolean) as string[]));
-  const users = userIds.length ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } }) : [];
-  const username = new Map(users.map(u => [u.id, u.username]));
-
-  const items = details.map(d => ({
-    insult: d.insult,
-    count: d.count,
-    first: d.firstBlamerId ? `${username.get(d.firstBlamerId) ?? d.firstBlamerId}` : '—',
-    last: d.lastBlamerId ? `${username.get(d.lastBlamerId) ?? d.lastBlamerId}` : '—',
-    top: d.topBlamerId ? `${username.get(d.topBlamerId) ?? d.topBlamerId}` : '—',
-  }));
-
-  const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
+    const totalPages = Math.max(1, Math.ceil(distinctInsultsTotal / pageSize));
 
     return {
       items,
@@ -143,15 +127,7 @@ async function fetchGeneralPage(guildId: string, page: number, pageSize: number)
       totalRecorded,
       totalDistinctOnPage: groupedAll.length
     } as any;
-  } catch (error) {
-    // Check if it's a database connection error
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
-      console.error('Database connection error in fetchGeneralPage:', error);
-      throw new Error('Database connection failed. Please try again later.');
-    }
-    // Re-throw other errors
-    throw error;
-  }
+  }, 'fetchGeneralPage');
 }
 
 async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number): Promise<PaginationData<any>> {
@@ -163,34 +139,37 @@ async function fetchInsultsData(scope: ViewScope, page: number, pageSize: number
 }
 
 async function fetchWordPage(guildId: string, word: string, page: number, pageSize: number): Promise<PaginationData<any>> {
-  try {
+  return withRetry(async () => {
     const where = { guildId, insult: word } as const;
-    const [totalCount, distinctUsersCount, topInsulterGroup, entries] = await Promise.all([
+    
+    // Simplified query - only get essential data
+    const [totalCount, distinctUsersCount, entries] = await Promise.all([
       prisma.insult.count({ where }),
       prisma.insult.groupBy({ by: ['userId'], where }).then(g => g.length),
-      prisma.insult.groupBy({ by: ['userId'], where, _count: { userId: true }, orderBy: [{ _count: { userId: 'desc' } }, { userId: 'asc' }], take: 1 }),
-      prisma.insult.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
+      prisma.insult.findMany({ 
+        where, 
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], 
+        skip: (page - 1) * pageSize, 
+        take: pageSize,
+        select: { id: true, userId: true, createdAt: true } // Only select needed fields
+      }),
     ]);
 
-  const userIds = new Set<string>();
-  if (topInsulterGroup[0]?.userId) userIds.add(topInsulterGroup[0].userId);
-  entries.forEach(e => { if (e.userId) userIds.add(e.userId); if (e.blamerId) userIds.add(e.blamerId); });
-  const users = userIds.size ? await prisma.user.findMany({ where: { id: { in: Array.from(userIds) } }, select: { id: true, username: true } }) : [];
-  const username = new Map(users.map(u => [u.id, u.username]));
+    // Simple metadata without user lookups
+    const metadata = {
+      total: totalCount,
+      users: distinctUsersCount,
+      top: '—', // Simplified - no user lookup
+    };
 
-  const metadata = {
-    total: totalCount,
-    users: distinctUsersCount,
-    top: topInsulterGroup[0]?.userId ? `${username.get(topInsulterGroup[0].userId) ?? topInsulterGroup[0].userId}` : '—',
-  };
+    // Simple rows without username lookup
+    const rows = entries.map(e => [
+      String(e.id),
+      e.userId, // Just show user ID instead of username
+      '\u200E' + getShortTime(new Date(e.createdAt)),
+    ]);
 
-  const rows = entries.map(e => [
-    String(e.id),
-    `${username.get(e.userId) ?? e.userId}`,
-    '\u200E' + getShortTime(new Date(e.createdAt)),
-  ]);
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
     return {
       items: rows,
@@ -203,15 +182,7 @@ async function fetchWordPage(guildId: string, word: string, page: number, pageSi
       metadata: any;
       word: string;
     };
-  } catch (error) {
-    // Check if it's a database connection error
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'P1001') {
-      console.error('Database connection error in fetchWordPage:', error);
-      throw new Error('Database connection failed. Please try again later.');
-    }
-    // Re-throw other errors
-    throw error;
-  }
+  }, 'fetchWordPage');
 }
 
 function buildInsultsEmbed(data: PaginationData<any> & {
