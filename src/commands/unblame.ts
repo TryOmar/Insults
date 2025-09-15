@@ -75,117 +75,81 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
 
+  // Batch-fetch insults
+  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids } } });
+  const insultById = new Map<number, typeof foundInsults[number]>(foundInsults.map(i => [i.id, i]));
+
+  // Determine permissions and categorize
+  const allowedToDelete: typeof foundInsults = [];
   for (const id of ids) {
-    const found = await prisma.insult.findUnique({ where: { id } });
+    const found = insultById.get(id);
     if (!found) {
-      // Check if it's already archived
-      const archived = await prisma.archive.findUnique({ where: { originalInsultId: id } });
-      if (archived) {
-        results.push({ kind: 'not_found', id }); // Treat as not found since it's already processed
-        continue;
-      }
+      // If it's already archived or not present at all, treat as not found
       results.push({ kind: 'not_found', id });
       continue;
     }
 
-      // Permission logic:
-      // - Anyone can unblame others
-      // - You cannot unblame yourself if you are the target but NOT the blamer
-      // - Admin can always delete anything
-      
-      if (found.userId === invokerId && found.blamerId !== invokerId) {
-        // Invoker is the target but NOT the blamer - they cannot unblame themselves
-        if (!isAdmin) {
-          results.push({ kind: 'forbidden', id, reason: 'self_not_blamer' });
-          continue;
-        }
-      }
-
-    // Move to Archive first, then delete
-    try {
-    await prisma.$transaction([
-      (prisma as any).archive.create({
-        data: {
-          originalInsultId: found.id, // Store the original insult ID
-          guildId: found.guildId,
-          userId: found.userId,
-          blamerId: found.blamerId,
-          insult: found.insult,
-          note: found.note ?? null,
-          createdAt: new Date(found.createdAt),
-          unblamerId: invokerId,
-        }
-      }),
-      prisma.insult.delete({ where: { id } }),
-    ]);
-    results.push({ kind: 'deleted', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
-    
-    // Create embed for this specific unblame action
-    const unblameEmbed = new EmbedBuilder()
-      .setTitle(`Deleted Blame #${id}`)
-      .addFields(
-        { name: '**Blame ID**', value: `#${id}`, inline: true },
-        { name: '**Insult**', value: found.insult, inline: true },
-        { name: '**Note**', value: found.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(found.userId), inline: false },
-        { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
-        { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-        { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
-      )
-      .setColor(0xE67E22)
-      .setTimestamp(new Date(found.createdAt));
-
-    // Log the gameplay action
-    await logGameplayAction(interaction, {
-      action: 'unblame',
-      target: { id: found.userId } as any, // We'll need to fetch the user if needed
-      blamer: { id: found.blamerId } as any,
-      unblamer: interaction.user,
-      blameId: id,
-      embed: unblameEmbed
-    });
-    } catch (error: any) {
-      // Handle unique constraint violation (already archived)
-      if (error.code === 'P2002' && error.meta?.target?.includes('originalInsultId')) {
-        // The insult was already archived, just delete it
-        try {
-          await prisma.insult.delete({ where: { id } });
-          results.push({ kind: 'deleted', id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
-          
-          // Create embed for this specific unblame action
-          const unblameEmbed = new EmbedBuilder()
-            .setTitle(`Deleted Blame #${id}`)
-            .addFields(
-              { name: '**Blame ID**', value: `#${id}`, inline: true },
-              { name: '**Insult**', value: found.insult, inline: true },
-              { name: '**Note**', value: found.note ?? '—', inline: false },
-              { name: '**Insulter**', value: userMention(found.userId), inline: false },
-              { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
-              { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-              { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
-            )
-            .setColor(0xE67E22)
-            .setTimestamp(new Date(found.createdAt));
-
-          // Log the gameplay action
-          await logGameplayAction(interaction, {
-            action: 'unblame',
-            target: { id: found.userId } as any,
-            blamer: { id: found.blamerId } as any,
-            unblamer: interaction.user,
-            blameId: id,
-            embed: unblameEmbed
-          });
-        } catch (deleteError) {
-          console.error(`Failed to delete already archived insult ${id}:`, deleteError);
-          results.push({ kind: 'not_found', id }); // Treat as not found since it's already processed
-        }
-      } else {
-        // Other database errors
-        console.error(`Failed to unblame insult ${id}:`, error);
-        results.push({ kind: 'not_found', id }); // Treat as not found to avoid crashing
-      }
+    // Permission logic:
+    // - Anyone can unblame others
+    // - You cannot unblame yourself if you are the target but NOT the blamer
+    // - Admin can always delete anything
+    if (found.userId === invokerId && found.blamerId !== invokerId && !isAdmin) {
+      results.push({ kind: 'forbidden', id, reason: 'self_not_blamer' });
+      continue;
     }
+
+    allowedToDelete.push(found);
+  }
+
+  if (allowedToDelete.length > 0) {
+    // Archive all allowed insults, skip duplicates if some were already archived
+    const archiveData = allowedToDelete.map(found => ({
+      originalInsultId: found.id,
+      guildId: found.guildId,
+      userId: found.userId,
+      blamerId: found.blamerId,
+      insult: found.insult,
+      note: found.note ?? null,
+      createdAt: new Date(found.createdAt),
+      unblamerId: invokerId,
+    }));
+
+    await prisma.$transaction([
+      (prisma as any).archive.createMany({ data: archiveData, skipDuplicates: true }),
+      prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) } } })
+    ]);
+
+    // Fill results for deleted items
+    for (const found of allowedToDelete) {
+      results.push({ kind: 'deleted', id: found.id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+    }
+
+    // Parallelize gameplay logging
+    await Promise.allSettled(allowedToDelete.map(found => {
+      const id = found.id;
+      const unblameEmbed = new EmbedBuilder()
+        .setTitle(`Deleted Blame #${id}`)
+        .addFields(
+          { name: '**Blame ID**', value: `#${id}`, inline: true },
+          { name: '**Insult**', value: found.insult, inline: true },
+          { name: '**Note**', value: found.note ?? '—', inline: false },
+          { name: '**Insulter**', value: userMention(found.userId), inline: false },
+          { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+          { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+          { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
+        )
+        .setColor(0xE67E22)
+        .setTimestamp(new Date(found.createdAt));
+
+      return logGameplayAction(interaction, {
+        action: 'unblame',
+        target: { id: found.userId } as any,
+        blamer: { id: found.blamerId } as any,
+        unblamer: interaction.user,
+        blameId: id,
+        embed: unblameEmbed
+      });
+    }));
   }
 
   // Build a single public report
