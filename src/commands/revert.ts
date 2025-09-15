@@ -55,8 +55,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     | { kind: 'failed'; id: number };
 
   const results: Result[] = [];
-  // Batch-fetch archives for the requested original IDs
-  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: ids } } });
+  // Batch-fetch archives for the requested original IDs, scoped to current guild
+  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: ids }, guildId } });
 
   // Permission filtering
   const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
@@ -98,7 +98,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Bulk delete archives for successfully created ones
   const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
   if (originalsToDelete.length > 0) {
-    await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete } } });
+    await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
   }
 
   // Collect results and log in parallel
