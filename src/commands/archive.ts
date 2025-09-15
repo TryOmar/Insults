@@ -53,8 +53,19 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
   const [totalCount, entries] = await Promise.all([
     (prisma as any).archive.count({ where }),
     (prisma as any).archive.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      where,
+      select: {
+        id: true,
+        originalInsultId: true,
+        guildId: true,
+        userId: true,
+        blamerId: true,
+        insult: true,
+        note: true,
+        createdAt: true,
+        unblamerId: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     })

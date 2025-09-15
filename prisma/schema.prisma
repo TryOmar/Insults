@@ -67,4 +67,5 @@ model Archive {
   @@index([guildId, blamerId])
   @@index([guildId, unblamerId])
   @@index([guildId, insult])
+  @@index([guildId, createdAt, id])
 }
