@@ -66,22 +66,30 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Remove duplicate IDs to prevent unique constraint violations
   const ids = [...new Set(rawIds)];
 
-  const isAdmin = typeof member.permissions === 'string' ? false : member.permissions.has(PermissionFlagsBits.Administrator);
+  const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
   type Result = 
     | { kind: 'deleted'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
     | { kind: 'not_found'; id: number }
-    | { kind: 'forbidden'; id: number; reason: 'self_not_blamer' | 'not_owner' };
+    | { kind: 'forbidden'; id: number; reason: 'self_not_blamer' };
 
   const results: Result[] = [];
 
+  // Cap how many IDs we process to prevent overload
+  const MAX_IDS = 50;
+  const processedIds = ids.slice(0, MAX_IDS);
+  const skippedIds = ids.slice(MAX_IDS);
+
+  // Defer reply to avoid interaction timeout for heavier operations
+  await interaction.deferReply();
+
   // Batch-fetch insults scoped to current guild to prevent cross-server unblames
-  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids }, guildId } });
+  const foundInsults = await prisma.insult.findMany({ where: { id: { in: processedIds }, guildId } });
   const insultById = new Map<number, typeof foundInsults[number]>(foundInsults.map(i => [i.id, i]));
 
   // Determine permissions and categorize
   const allowedToDelete: typeof foundInsults = [];
-  for (const id of ids) {
+  for (const id of processedIds) {
     const found = insultById.get(id);
     if (!found) {
       // If it's already archived or not present at all, treat as not found
@@ -114,42 +122,52 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       unblamerId: invokerId,
     }));
 
-    await prisma.$transaction([
-      (prisma as any).archive.createMany({ data: archiveData, skipDuplicates: true }),
-      prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
-    ]);
+    try {
+      await prisma.$transaction([
+        (prisma as any).archive.createMany({ data: archiveData, skipDuplicates: true }),
+        prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
+      ]);
 
-    // Fill results for deleted items
-    for (const found of allowedToDelete) {
-      results.push({ kind: 'deleted', id: found.id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+      // Fill results for deleted items
+      for (const found of allowedToDelete) {
+        results.push({ kind: 'deleted', id: found.id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+      }
+
+      // Parallelize gameplay logging
+      await Promise.allSettled(allowedToDelete.map(found => {
+        const id = found.id;
+        const unblameEmbed = new EmbedBuilder()
+          .setTitle(`Deleted Blame #${id}`)
+          .addFields(
+            { name: '**Blame ID**', value: `#${id}`, inline: true },
+            { name: '**Insult**', value: found.insult, inline: true },
+            { name: '**Note**', value: found.note ?? '—', inline: false },
+            { name: '**Insulter**', value: userMention(found.userId), inline: false },
+            { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+            { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+            { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
+          )
+          .setColor(0xE67E22)
+          .setTimestamp(new Date());
+
+        return logGameplayAction(interaction, {
+          action: 'unblame',
+          target: { id: found.userId } as any,
+          blamer: { id: found.blamerId } as any,
+          unblamer: interaction.user,
+          blameId: id,
+          embed: unblameEmbed
+        });
+      }));
+    } catch (error) {
+      const errorEmbed = new EmbedBuilder()
+        .setTitle('❌ Unblame Failed')
+        .setDescription('An error occurred while deleting blames. Please try again later.')
+        .setColor(0xE74C3C)
+        .setTimestamp();
+      await interaction.editReply({ embeds: [errorEmbed] });
+      return;
     }
-
-    // Parallelize gameplay logging
-    await Promise.allSettled(allowedToDelete.map(found => {
-      const id = found.id;
-      const unblameEmbed = new EmbedBuilder()
-        .setTitle(`Deleted Blame #${id}`)
-        .addFields(
-          { name: '**Blame ID**', value: `#${id}`, inline: true },
-          { name: '**Insult**', value: found.insult, inline: true },
-          { name: '**Note**', value: found.note ?? '—', inline: false },
-          { name: '**Insulter**', value: userMention(found.userId), inline: false },
-          { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
-          { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-          { name: '**When**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
-        )
-        .setColor(0xE67E22)
-        .setTimestamp(new Date(found.createdAt));
-
-      return logGameplayAction(interaction, {
-        action: 'unblame',
-        target: { id: found.userId } as any,
-        blamer: { id: found.blamerId } as any,
-        unblamer: interaction.user,
-        blameId: id,
-        embed: unblameEmbed
-      });
-    }));
   }
 
   // Build a single public report
@@ -163,10 +181,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (notFound.length) otherParts.push(`Not found: ${notFound.map(n => `#${n.id}`).join(', ')}`);
   if (forbidden.length) {
     const selfIds = forbidden.filter(f => f.reason === 'self_not_blamer').map(f => `#${f.id}`).join(', ');
-    const otherIds = forbidden.filter(f => f.reason === 'not_owner').map(f => `#${f.id}`).join(', ');
-    if (selfIds) otherParts.push(`Self but not blamer: ${selfIds}`);
-    if (otherIds) otherParts.push(`Not your blames: ${otherIds}`);
+    if (selfIds) otherParts.push(`Cannot unblame yourself unless you were the blamer: ${selfIds}`);
   }
+  if (skippedIds.length) otherParts.push(`Skipped (too many IDs): ${skippedIds.map(id => `#${id}`).join(', ')}`);
 
   // Check if all unblame attempts were denied
   if (deleted.length === 0) {
@@ -177,14 +194,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     }
     if (forbidden.length > 0) {
       const selfNotBlamer = forbidden.filter(f => f.reason === 'self_not_blamer');
-      const notOwner = forbidden.filter(f => f.reason === 'not_owner');
-      
       if (selfNotBlamer.length > 0) {
         reasons.push(`**Cannot unblame yourself** (${selfNotBlamer.length}): ${selfNotBlamer.map(f => `#${f.id}`).join(', ')}`);
       }
-      if (notOwner.length > 0) {
-        reasons.push(`**Not your blames** (${notOwner.length}): ${notOwner.map(f => `#${f.id}`).join(', ')}`);
-      }
+    }
+    if (skippedIds.length > 0) {
+      reasons.push(`**Skipped** (${skippedIds.length}): ${skippedIds.map(id => `#${id}`).join(', ')}`);
     }
 
     // Send a single professional response with all denial reasons
@@ -196,11 +211,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       )
       .setColor(0xE74C3C)
       .setTimestamp();
-
-    const success = await safeInteractionReply(interaction, { 
-      embeds: [deniedEmbed]
-    });
-    if (!success) return;
+    await interaction.editReply({ embeds: [deniedEmbed] });
     return;
   }
 
@@ -227,10 +238,10 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         { name: '**Insulter**', value: userMention(d.userId), inline: true },
         { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
         { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-        { name: '**When**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
+        { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
       )
       .setColor(0xE67E22)
-      .setTimestamp(new Date(d.createdAt));
+      .setTimestamp(new Date());
     pages.push({ embeds: [embed] });
   }
 
@@ -239,17 +250,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     row.addComponents(
       new ButtonBuilder().setCustomId('unblame:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
       new ButtonBuilder().setCustomId('unblame:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
-      new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
+      new ButtonBuilder().setCustomId('unblame:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
+      new ButtonBuilder().setCustomId('unblame:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
     );
     return [row];
   };
 
   const initialPage = 1;
-  await interaction.reply({ embeds: pages[initialPage - 1].embeds });
+  await interaction.editReply({ embeds: pages[initialPage - 1].embeds, components: buildButtons(initialPage, pages.length) });
   const sent = await interaction.fetchReply();
   sessionStore.set(sent.id, { pages, currentPage: initialPage });
-  await interaction.editReply({ components: buildButtons(initialPage, pages.length) });
+  // Cleanup session after 15 minutes
+  setTimeout(() => sessionStore.delete(sent.id), 15 * 60 * 1000);
 
   // Update insulter role after successful unblame operations
   if (deleted.length > 0) {

@@ -46,7 +46,14 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const isAdmin = typeof member.permissions === 'string' ? false : member.permissions.has(PermissionFlagsBits.Administrator);
+  const MAX_IDS = 50;
+  const processedIds = [...new Set(ids)].slice(0, MAX_IDS);
+  const skippedIds = [...new Set(ids)].slice(MAX_IDS);
+
+  // Avoid interaction timeout while doing DB work
+  await interaction.deferReply();
+
+  const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
   type Result = 
     | { kind: 'restored'; id: number; originalId: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
@@ -56,14 +63,14 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
   // Batch-fetch archives for the requested original IDs, scoped to current guild
-  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: ids }, guildId } });
+  const archives = await (prisma as any).archive.findMany({ where: { originalInsultId: { in: processedIds }, guildId } });
 
   // Permission filtering
   const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
   const allowedByOriginalId = new Map<number, any>(allowed.map((a: any) => [a.originalInsultId, a]));
 
   // Mark not found and forbidden
-  for (const id of ids) {
+  for (const id of processedIds) {
     const a = archives.find((x: any) => x.originalInsultId === id);
     if (!a) {
       results.push({ kind: 'not_found', id });
@@ -75,16 +82,27 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Create insults for allowed in parallel to obtain new IDs
-  const creations = await Promise.allSettled(allowed.map((a: any) => prisma.insult.create({
-    data: {
-      guildId: a.guildId,
-      userId: a.userId,
-      blamerId: a.blamerId,
-      insult: a.insult,
-      note: a.note ?? null,
-      createdAt: new Date(a.createdAt),
-    }
-  })));
+  let creations: PromiseSettledResult<any>[] = [];
+  try {
+    creations = await Promise.allSettled(allowed.map((a: any) => prisma.insult.create({
+      data: {
+        guildId: a.guildId,
+        userId: a.userId,
+        blamerId: a.blamerId,
+        insult: a.insult,
+        note: a.note ?? null,
+        createdAt: new Date(a.createdAt),
+      }
+    })));
+  } catch (err) {
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ Revert Failed')
+      .setDescription('An error occurred while restoring blames. Please try again later.')
+      .setColor(0xE74C3C)
+      .setTimestamp();
+    await interaction.editReply({ embeds: [errorEmbed] });
+    return;
+  }
 
   // Map created results by original id
   const createdByOriginal = new Map<number, any>();
@@ -98,7 +116,17 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Bulk delete archives for successfully created ones
   const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
   if (originalsToDelete.length > 0) {
-    await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
+    try {
+      await (prisma as any).archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
+    } catch (err) {
+      const errorEmbed = new EmbedBuilder()
+        .setTitle('⚠️ Partial Revert')
+        .setDescription('Some blames were restored but archives could not be cleaned up.')
+        .setColor(0xE67E22)
+        .setTimestamp();
+      await interaction.editReply({ embeds: [errorEmbed] });
+      return;
+    }
   }
 
   // Collect results and log in parallel
@@ -133,7 +161,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(archive.createdAt)), inline: false },
       )
       .setColor(0xF39C12)
-      .setTimestamp(new Date(archive.createdAt));
+      .setTimestamp(new Date());
 
     return logGameplayAction(interaction, {
       action: 'revert',
@@ -157,6 +185,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (notFound.length) otherParts.push(`Not found: ${notFound.map(n => `#${n.id}`).join(', ')}`);
   if (forbidden.length) otherParts.push(`Not allowed: ${forbidden.map(f => `#${f.id}`).join(', ')}`);
   if (failed.length) otherParts.push(`Failed: ${failed.map(f => `#${f.id}`).join(', ')}`);
+  if (skippedIds.length) otherParts.push(`Skipped (too many IDs): ${skippedIds.map(id => `#${id}`).join(', ')}`);
 
   const summary = new EmbedBuilder()
     .setTitle('Revert Summary')
@@ -190,17 +219,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     row.addComponents(
       new ButtonBuilder().setCustomId('revert:first').setLabel('⏮').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
       new ButtonBuilder().setCustomId('revert:prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-      new ButtonBuilder().setCustomId('revert:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
-      new ButtonBuilder().setCustomId('revert:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === pages.length),
+      new ButtonBuilder().setCustomId('revert:next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
+      new ButtonBuilder().setCustomId('revert:last').setLabel('⏭').setStyle(ButtonStyle.Secondary).setDisabled(page === total),
     );
     return [row];
   };
 
   const initialPage = 1;
-  await interaction.reply({ embeds: pages[initialPage - 1].embeds });
+  await interaction.editReply({ embeds: pages[initialPage - 1].embeds, components: buildButtons(initialPage, pages.length) });
   const sent = await interaction.fetchReply();
   sessionStore.set(sent.id, { pages, currentPage: initialPage });
-  await interaction.editReply({ components: buildButtons(initialPage, pages.length) });
+  // Cleanup session after 15 minutes
+  setTimeout(() => sessionStore.delete(sent.id), 15 * 60 * 1000);
 
   // Update insulter role after successful revert operations
   if (restored.length > 0) {
