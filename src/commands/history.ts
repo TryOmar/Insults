@@ -40,8 +40,17 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const userOpt = interaction.options.getUser('user', false);
   const scope: HistoryScope = { guildId, userId: userOpt?.id ?? null };
   
+  // Try to fetch live display name (global name preferred) for title rendering
+  let targetDisplayName: string | undefined;
+  if (scope.userId) {
+    try {
+      const user = await interaction.client.users.fetch(scope.userId);
+      targetDisplayName = (user as any).globalName ?? user.username;
+    } catch {}
+  }
+  
   const paginationManager = createHistoryPaginationManager();
-  await paginationManager.handleInitialCommand(interaction, scope);
+  await paginationManager.handleInitialCommand(interaction, scope, targetDisplayName);
 }
 
 // Export with spam protection
@@ -130,15 +139,15 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   insultGroups: Array<{ insult: string; _count: { insult: number } }>;
   formattedInsults: string;
   targetUsername: string | null;
-}, scope: HistoryScope, serverName: string | undefined): EmbedBuilder {
+}, scope: HistoryScope, serverName: string | undefined, targetDisplayName?: string): EmbedBuilder {
   const { items: entries, totalCount, currentPage, totalPages, distinctUsers, blamerMap, insultedUserMap, insultGroups, formattedInsults, targetUsername } = data;
   
   const headers = scope.userId ? ['ID', 'Blamer', 'Insult'] : ['ID', 'Insulter', 'Insult'];
   const rows = entries.map((e) => [
     String(e.id),
     scope.userId 
-      ? (blamerMap.get(e.blamerId) ?? e.blamerId) // Prefer username, fallback to ID
-      : (insultedUserMap.get(e.userId) ?? e.userId), // Prefer username, fallback to ID
+      ? `<@${e.blamerId}>`
+      : `<@${e.userId}>`,
     e.insult,
   ]);
   const config: TableConfig = {
@@ -152,7 +161,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   const table = renderTable(headers, rows, config);
 
   const title = scope.userId
-    ? `📜 History for ${targetUsername ? `${targetUsername}` : scope.userId}`
+    ? `📜 History for ${(targetDisplayName || targetUsername) ?? 'Unknown'}`
     : '📜 Server-wide History';
   
   const embed = new EmbedBuilder()
@@ -163,8 +172,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
 
   const fields: { name: string; value: string; inline?: boolean }[] = [];
   if (scope.userId) {
-    // Show username when available; otherwise fall back to the raw user ID
-    fields.push({ name: 'User', value: (targetUsername ? `@${targetUsername}` : scope.userId), inline: false });
+    fields.push({ name: 'User', value: `<@${scope.userId}>`, inline: false });
   }
   fields.push(
     { name: 'Total Blames', value: String(totalCount), inline: true },
@@ -212,8 +220,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
         insultGroups: Array<{ insult: string; _count: { insult: number } }>;
         formattedInsults: string;
         targetUsername: string | null;
-      }, scope: HistoryScope, serverName: string | undefined) => {
-        return buildHistoryEmbed(data, scope, serverName);
+      }, scope: HistoryScope, serverName: string | undefined, targetDisplayName?: string) => {
+        return buildHistoryEmbed(data, scope, serverName, targetDisplayName);
       },
       buildCustomId: (page: number, scope: HistoryScope) => {
         const userId = scope.userId ?? 'all';
