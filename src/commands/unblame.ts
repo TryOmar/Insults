@@ -75,8 +75,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
 
-  // Batch-fetch insults
-  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids } } });
+  // Batch-fetch insults scoped to current guild to prevent cross-server unblames
+  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids }, guildId } });
   const insultById = new Map<number, typeof foundInsults[number]>(foundInsults.map(i => [i.id, i]));
 
   // Determine permissions and categorize
@@ -116,7 +116,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
     await prisma.$transaction([
       (prisma as any).archive.createMany({ data: archiveData, skipDuplicates: true }),
-      prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) } } })
+      prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
     ]);
 
     // Fill results for deleted items
