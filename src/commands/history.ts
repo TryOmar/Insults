@@ -137,8 +137,8 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   const rows = entries.map((e) => [
     String(e.id),
     scope.userId 
-      ? `<@${e.blamerId}>`
-      : `<@${e.userId}>`,
+      ? (blamerMap.get(e.blamerId) ?? e.blamerId)
+      : (insultedUserMap.get(e.userId) ?? e.userId),
     e.insult,
   ]);
   const config: TableConfig = {
