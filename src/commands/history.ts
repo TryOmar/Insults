@@ -40,17 +40,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const userOpt = interaction.options.getUser('user', false);
   const scope: HistoryScope = { guildId, userId: userOpt?.id ?? null };
   
-  // Try to fetch live display name (global name preferred) for title rendering
-  let targetDisplayName: string | undefined;
-  if (scope.userId) {
-    try {
-      const user = await interaction.client.users.fetch(scope.userId);
-      targetDisplayName = (user as any).globalName ?? user.username;
-    } catch {}
-  }
-  
   const paginationManager = createHistoryPaginationManager();
-  await paginationManager.handleInitialCommand(interaction, scope, targetDisplayName);
+  await paginationManager.handleInitialCommand(interaction, scope);
 }
 
 // Export with spam protection
@@ -139,7 +130,7 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   insultGroups: Array<{ insult: string; _count: { insult: number } }>;
   formattedInsults: string;
   targetUsername: string | null;
-}, scope: HistoryScope, serverName: string | undefined, targetDisplayName?: string): EmbedBuilder {
+}, scope: HistoryScope, serverName: string | undefined): EmbedBuilder {
   const { items: entries, totalCount, currentPage, totalPages, distinctUsers, blamerMap, insultedUserMap, insultGroups, formattedInsults, targetUsername } = data;
   
   const headers = scope.userId ? ['ID', 'Blamer', 'Insult'] : ['ID', 'Insulter', 'Insult'];
@@ -160,10 +151,16 @@ function buildHistoryEmbed(data: PaginationData<any> & {
   };
   const table = renderTable(headers, rows, config);
 
-  const title = scope.userId
-    ? `📜 History for ${(targetDisplayName || targetUsername) ?? 'Unknown'}`
-    : '📜 Server-wide History';
-  
+  let title: string;
+  if (scope.userId) {
+    if (targetUsername) {
+      title = `📜 Insult history for **${targetUsername}** (this server)`;
+    } else {
+      title = '📜 Insult history for this user';
+    }
+  } else {
+    title = '📜 Server-wide insult history';
+  }
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setDescription(table)
@@ -220,8 +217,8 @@ function createHistoryPaginationManager(): PaginationManager<any, PaginationData
         insultGroups: Array<{ insult: string; _count: { insult: number } }>;
         formattedInsults: string;
         targetUsername: string | null;
-      }, scope: HistoryScope, serverName: string | undefined, targetDisplayName?: string) => {
-        return buildHistoryEmbed(data, scope, serverName, targetDisplayName);
+      }, scope: HistoryScope, serverName: string | undefined) => {
+        return buildHistoryEmbed(data, scope, serverName);
       },
       buildCustomId: (page: number, scope: HistoryScope) => {
         const userId = scope.userId ?? 'all';
