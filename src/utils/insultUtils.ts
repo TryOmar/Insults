@@ -12,17 +12,102 @@ export function canonicalizeInsult(raw: string, maxLen = 100): string {
 }
 
 /**
+ * Validate Arabic insults by rejecting text containing forbidden "said" words.
+ * These words break the database since the insult should contain only the insult itself,
+ * not phrases like "he said insult".
+ */
+export function validateSayWordArabic(text: string): { valid: boolean; error?: string } {
+  // Skip validation if text contains no Arabic letters
+  if (!/[\u0600-\u06FF]/.test(text)) { return { valid: true }; }
+
+  // List of forbidden words (all conjugations of قال/يقول)
+  const forbiddenWords = [
+    // --- ذكر (قال) ---
+    'قال','قالو','قالوا','قاله','قالها','قالهم','قالك','قالكم','قالكن','قالنا','قالة',
+    'قالي','قالولي','قالولك','قالولكم','قالولنا','قالوله','قالولها','قالوها','قالوه',
+    'قلت','قلتما','قلتم','قلتن','قلنا',
+    'يقولي','يقول','يقولوا','يقولون','يقولولي','يقولنا','يقولن',
+    'بيقول','بيقولوا','بيقولون','بيقولي','بيقولولي','بيقولنا','بيقولك','بيقولكم','بيقولكن',
+    'بيقولها','بيقولهم',
+    'بقول','بقولك','بقولكم','بقولنا','بقولهم',
+    'قلك','قلكم','قلكن','قلهم','قلها','قلو',
+
+    // --- أنثى (قالت) ---
+    'قالت','قالتلي','قالتلك','قالتلكم','قالتلنا',
+    'قلتي','قلتن',
+    'تقول','تقولين','تقولوا','تقولون','تقولن','تقوللي','تقولولي','تقولنا',
+    'بتقول','بتقولوا','بتقولولي','بتقوللي','بتقولنا','بتقولي','بيتقولي'
+  ];
+
+  // Split input text into words (case-insensitive)
+  const words = text.toLowerCase().split(/\s+/);
+  
+  // Check if any forbidden word exists in the input
+  for (const word of words) {
+    if (forbiddenWords.includes(word)) {
+      return {
+        valid: false,
+        error: `**Insult field error:** You must write only the insult without "${word}".\n` +
+               `*For additional context or explanations, use the note field.*\n` +
+               `\`Example:\` /blame @user insults: dog note: he says dog when he does XYZ`
+      };        
+    }
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Validate English insults by rejecting text containing forbidden "say/tell" words.
+ * The insult field should contain only the insult itself, not phrases like "he said insult".
+ */
+export function validateSayWordEnglish(text: string): { valid: boolean; error?: string } {
+  const forbiddenWords = [
+    'say', 'says', 'said', 'saying',
+    'tell', 'tells', 'told', 'telling'
+  ];
+
+  // Split input text into words (case-insensitive)
+  const words = text.toLowerCase().split(/\s+/);
+
+  // Check if any forbidden word exists in the input
+  for (const word of words) {
+    if (forbiddenWords.includes(word)) {
+      return {
+        valid: false,
+        error: `**Insult field error:** You must write only the insult without "${word}".\n` +
+               `*For additional context or explanations, use the note field.*\n` +
+               `\`Example:\` /blame @user insults: dog note: he says dog when he does XYZ`
+      };        
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
  * Validate insult rules:
  * - Must not be empty
  * - Up to 3 words
  * - Each word ≤ 20 chars
  * - Total length ≤ 100
+ * - No "said/say/tell" words in Arabic or English
  */
 export function validateInsultInput(raw: string | null): string | null {
   if (!raw) return null;
 
   const cleaned = canonicalizeInsult(raw, 100);
   if (cleaned.length === 0) return null;
+
+  // Check for forbidden "said" words in Arabic and English
+  const ar = validateSayWordArabic(cleaned);
+  if (!ar.valid) {
+    throw new Error(ar.error!);
+  }
+  const en = validateSayWordEnglish(cleaned);
+  if (!en.valid) {
+    throw new Error(en.error!);
+  }
 
   const words = cleaned.split(" ");
   if (words.length > 3) {
