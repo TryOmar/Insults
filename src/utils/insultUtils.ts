@@ -20,24 +20,31 @@ export function validateSayWordArabic(text: string): { valid: boolean; error?: s
   // Skip validation if text contains no Arabic letters
   if (!/[\u0600-\u06FF]/.test(text)) { return { valid: true }; }
 
-  // List of forbidden words (all conjugations of قال/يقول)
+  // Full forbidden words list (male and female combined, common → less common)
   const forbiddenWords = [
-    // --- ذكر (قال) ---
-    'قال','قالو','قالوا','قاله','قالها','قالهم','قالك','قالكم','قالكن','قالنا','قالة',
-    'قالي','قالولي','قالولك','قالولكم','قالولنا','قالوله','قالولها','قالوها','قالوه',
-    'قلت','قلتما','قلتم','قلتن','قلنا',
-    'يقولي','يقول','يقولوا','يقولون','يقولولي','يقولنا','يقولن',
-    'بيقول','بيقولوا','بيقولون','بيقولي','بيقولولي','بيقولنا','بيقولك','بيقولكم','بيقولكن',
-    'بيقولها','بيقولهم',
-    'بقول','بقولك','بقولكم','بقولنا','بقولهم',
-    'قلك','قلكم','قلكن','قلهم','قلها','قلو',
+    // Male / general (past & present)
+    'قال', 'قالي', 'قلي', 'قلتلي', 'قلتلك', 'قاله', 'قالها', 'قالهم', 'قالك', 'قالنا', 'قالوا', 'قالو',
+    'قلت', 'قلته', 'قلتها', 'قلنا', 'قلتم', 'قلها',
+    'بيقول', 'بيقولي', 'بيقوله', 'بيقولها', 'بيقولهم', 'بيقولك', 'بيقولنا', 'بيقولوا', 'بيقولو',
+    'بيقله', 'بيقلك', 'بيقلنا', 'بيقلهم', 'بيقلوه', 'بيقلوها', 'بقول', 'بقولك', 'بقولنا', 'بقولهم',
+    'قالولي','قالولك','قالولنا','قالوله','قالوها','قالوه','قلتما','قلتم','قلتن',
+    'يقول','يقولوا','يقولون','يقولي','يقولنا','يقولن','يقولولي','بيقولكم','بيقولها',
+    'بيؤول','بيئول',
 
-    // --- أنثى (قالت) ---
-    'قالت','قالتلي','قالتلك','قالتلكم','قالتلنا',
-    'قلتي','قلتن',
-    'تقول','تقولين','تقولوا','تقولون','تقولن','تقوللي','تقولولي','تقولنا',
-    'بتقول','بتقولوا','بتقولولي','بتقوللي','بتقولنا','بتقولي','بيتقولي'
+    // Male / شتم verbs (past & present)
+    'شتم','شتمت','شتمني','شتمنا','شتمتك','شتمتني','شتمهم','شتمتها','شتمتوا',
+    'بيشتم','بيشتمني','بيشتمنا','بيشتمهم','بشتم','بشتمك','بشتمني',
+
+    // Female / general (past & present)
+    'قالت','قاليتي','قلتي','قالتلي','قلتلي','قالتلك','قالتلكم','قلتن','قلتهن','قالتلنا','قالتها','قالتهم','قالتهن',
+    'تقول','تقولين','تقولوا','تقولن','تقوللي','تقولنا','تقولولي',
+    'بتقول','بتقولي','بتقلها','بتقلهم','بتقلنا','بتقولها','بتقولهم','بتقولنا','بتقلني','بتقوله','بتقلك','بتقلن','بتقلكم','بيتقولي','بتقوللي','بتقولوا','بتقولولي',
+
+    // Female / شتم verbs (past & present)
+    'شتمت','شتمني','شتمنا','شتمتها','بتشتم','بتشتمني','بتشتمنا'
   ];
+
+
 
   // Split input text into words (case-insensitive)
   const words = text.toLowerCase().split(/\s+/);
@@ -47,24 +54,36 @@ export function validateSayWordArabic(text: string): { valid: boolean; error?: s
     if (forbiddenWords.includes(word)) {
       return {
         valid: false,
-        error: `**Insult field error:** You must write only the insult without "${word}".\n` +
-               `*For additional context or explanations, use the note field.*\n` +
-               `\`Example:\` /blame @user insults: dog note: he says dog when he does XYZ`
-      };        
+        error: `❌ Only write the insult without "${word}".\n` +
+               `Use the note for extra context.\n` +
+               `Example: /blame @user insult: \`dog\` note: \`he says dog when he does XYZ\``
+      };               
     }
   }
   
   return { valid: true };
 }
 
+
 /**
- * Validate English insults by rejecting text containing forbidden "say/tell" words.
- * The insult field should contain only the insult itself, not phrases like "he said insult".
+ * Validate English insults by rejecting text containing forbidden "say/tell" words
+ * or common insulting words. The insult field should contain only the insult itself.
  */
 export function validateSayWordEnglish(text: string): { valid: boolean; error?: string } {
+  // Skip validation if text contains no English letters
+  if (!/[a-zA-Z]/.test(text)) { return { valid: true }; }
+
+  // Most common forbidden words list
   const forbiddenWords = [
-    'say', 'says', 'said', 'saying',
-    'tell', 'tells', 'told', 'telling'
+    // Say verbs
+    'say','says','said','saying',
+    // Tell verbs
+    'tell','tells','told','telling',
+    // Common general insult words
+    'insult','insults','insulted','insulting',
+    'swear','swears','swore','sworn','swearing',
+    'curse','curses','cursed','cursing',
+    'abuse','abuses','abused','abusing'
   ];
 
   // Split input text into words (case-insensitive)
@@ -75,10 +94,10 @@ export function validateSayWordEnglish(text: string): { valid: boolean; error?: 
     if (forbiddenWords.includes(word)) {
       return {
         valid: false,
-        error: `**Insult field error:** You must write only the insult without "${word}".\n` +
-               `*For additional context or explanations, use the note field.*\n` +
-               `\`Example:\` /blame @user insults: dog note: he says dog when he does XYZ`
-      };        
+        error: `❌ Only write the insult without "${word}".\n` +
+               `Use the note for extra context.\n` +
+               `Example: /blame @user insult: \`dog\` note: \`he says dog when he does XYZ\``
+      };      
     }
   }
 
