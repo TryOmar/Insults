@@ -2,8 +2,9 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, MessageFlags } from '
 import { blameUser } from '../services/blame.js';
 import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
-import { canUseBotCommands } from '../utils/roleValidation.js';
+import { canUseBotCommands, isUserFrozen, canUseMutatingCommands } from '../utils/roleValidation.js';
 import { logGameplayAction } from '../utils/channelLogging.js';
+import { setupCache } from '../utils/setupCache.js';
 
 export const data = new SlashCommandBuilder()
   .setName('blame')
@@ -33,24 +34,40 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Defer the interaction immediately to show "thinking" state
+  try {
+    await interaction.deferReply();
+  } catch (error) {
+    // Ignore if already acknowledged
+    console.warn('Failed to defer interaction:', error);
+  }
+
   // Check role permissions
   const member = await getGuildMember(interaction);
   if (!member) {
-    const success = await safeInteractionReply(interaction, { 
-      content: 'Unable to verify your permissions.', 
-      flags: MessageFlags.Ephemeral 
+    await interaction.editReply({ 
+      content: 'Unable to verify your permissions.'
     });
-    if (!success) return;
     return;
   }
 
-  const roleCheck = await canUseBotCommands(member, true); // true = mutating command
-  if (!roleCheck.allowed) {
-    const success = await safeInteractionReply(interaction, { 
-      content: roleCheck.reason || 'You do not have permission to use this command.', 
-      flags: MessageFlags.Ephemeral 
+  // Fetch setup data once for both role validation and logging (with caching)
+  const setup = await setupCache.getSetup(guildId);
+
+  // Check role permissions using the fetched setup data
+  const frozenCheck = await isUserFrozen(member, setup);
+  if (!frozenCheck.allowed) {
+    await interaction.editReply({ 
+      content: frozenCheck.reason || 'You cannot use this command.'
     });
-    if (!success) return;
+    return;
+  }
+
+  const mutatingCheck = await canUseMutatingCommands(member, setup);
+  if (!mutatingCheck.allowed) {
+    await interaction.editReply({ 
+      content: mutatingCheck.reason || 'You do not have permission to use this command.'
+    });
     return;
   }
 
@@ -70,21 +87,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   });
 
   if (!result.ok) {
-    const success = await safeInteractionReply(interaction, { 
-      content: result.error.message,
-      flags: MessageFlags.Ephemeral 
+    await interaction.editReply({ 
+      content: result.error.message
     });
-    if (!success) return;
     return;
   }
 
   // Send the public response directly (visible to everyone)
-  const success = await safeInteractionReply(interaction, { 
+  await interaction.editReply({ 
     embeds: [result.data.publicEmbed] 
   });
-  if (!success) return;
 
-  // Log the gameplay action
+  // Log the gameplay action using the fetched setup data
   await logGameplayAction(interaction, {
     action: 'blame',
     target,
@@ -94,7 +108,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     blameId: result.data.insultId,
     embed: result.data.publicEmbed,
     addReactions: true
-  });
+  }, setup);
 
   try {
     const sent = await interaction.fetchReply();

@@ -75,6 +75,14 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Defer the interaction to show "thinking" state
+  try {
+    await interaction.deferReply();
+  } catch (error) {
+    // Ignore if already acknowledged
+    console.warn('Failed to defer config interaction:', error);
+  }
+
   const action = interaction.options.getString('action', true);
   const role = interaction.options.getRole('role', false);
   const days = interaction.options.getInteger('days', false);
@@ -94,9 +102,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         break;
       case 'insulter-days':
         if (days === null) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please provide the number of days for the insulter role calculation.', 
-            flags: MessageFlags.Ephemeral 
+          await interaction.editReply({ 
+            content: 'Please provide the number of days for the insulter role calculation.'
           });
           return;
         }
@@ -110,9 +117,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         break;
       case 'radar-mode':
         if (radarMode === null) {
-          await safeInteractionReply(interaction, { 
-            content: 'Please select a radar mode.', 
-            flags: MessageFlags.Ephemeral 
+          await interaction.editReply({ 
+            content: 'Please select a radar mode.'
           });
           return;
         }
@@ -122,22 +128,21 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         await handleViewConfig(interaction, guildId);
         break;
       default:
-        await safeInteractionReply(interaction, { 
-          content: 'Unknown action.', 
-          flags: MessageFlags.Ephemeral 
+        await interaction.editReply({ 
+          content: 'Unknown action.'
         });
     }
   } catch (error) {
     console.error('Config command error:', error);
-    await safeInteractionReply(interaction, { 
-      content: 'An error occurred while updating configuration.', 
-      flags: MessageFlags.Ephemeral 
+    await interaction.editReply({ 
+      content: 'An error occurred while updating configuration.'
     });
   }
 }
 
 async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
+  const everyoneId = interaction.guild?.roles.everyone.id;
+  const isDisabled = !role || (everyoneId && role.id === everyoneId);
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -158,12 +163,13 @@ async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildI
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Blamer role ${status} by ${interaction.user.tag}`);
 }
 
 async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
+  const everyoneId = interaction.guild?.roles.everyone.id;
+  const isDisabled = !role || (everyoneId && role.id === everyoneId);
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -184,12 +190,13 @@ async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildI
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Frozen role ${status} by ${interaction.user.tag}`);
 }
 
 async function handleInsulterRole(interaction: ChatInputCommandInteraction, guildId: string, role: any) {
-  const isDisabled = !role || role.name === 'none' || role.id === guildId; // @everyone role
+  const everyoneId = interaction.guild?.roles.everyone.id;
+  const isDisabled = !role || (everyoneId && role.id === everyoneId);
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -210,7 +217,7 @@ async function handleInsulterRole(interaction: ChatInputCommandInteraction, guil
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Insulter role ${status} by ${interaction.user.tag}`);
 }
 
@@ -235,12 +242,12 @@ async function handleInsulterDays(interaction: ChatInputCommandInteraction, guil
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Insulter days set to ${days} by ${interaction.user.tag}`);
 }
 
 async function handleMonitorChannel(interaction: ChatInputCommandInteraction, guildId: string, channel: any) {
-  const isDisabled = !channel || channel.name === 'none';
+  const isDisabled = !channel;
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -261,12 +268,12 @@ async function handleMonitorChannel(interaction: ChatInputCommandInteraction, gu
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Monitor channel ${status} by ${interaction.user.tag}`);
 }
 
 async function handleInsultsChannel(interaction: ChatInputCommandInteraction, guildId: string, channel: any) {
-  const isDisabled = !channel || channel.name === 'none';
+  const isDisabled = !channel;
 
   const setup = await prisma.setup.upsert({
     where: { guildId },
@@ -287,7 +294,7 @@ async function handleInsultsChannel(interaction: ChatInputCommandInteraction, gu
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Insults channel ${status} by ${interaction.user.tag}`);
 }
 
@@ -358,7 +365,7 @@ async function handleViewConfig(interaction: ChatInputCommandInteraction, guildI
     embed.addFields({ name: '📡 Radar Mode', value: radarDisplay, inline: true });
   }
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function handleRadarMode(interaction: ChatInputCommandInteraction, guildId: string, radarMode: string) {
@@ -388,7 +395,7 @@ async function handleRadarMode(interaction: ChatInputCommandInteraction, guildId
     .setColor(0x00ff00)
     .setTimestamp();
 
-  await safeInteractionReply(interaction, { embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   await logToMonitorChannel(interaction, `Radar ${status} by ${interaction.user.tag}`);
 }
 

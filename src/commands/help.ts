@@ -159,6 +159,14 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId;
   const isDM = !guildId;
 
+  // Defer the interaction to show "thinking" state
+  try {
+    await interaction.deferReply();
+  } catch (error) {
+    // Ignore if already acknowledged
+    console.warn('Failed to defer help interaction:', error);
+  }
+
   // Create command selection dropdown
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId('help_command_select')
@@ -179,7 +187,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
   // Show interactive help with dropdown in both DMs and server channels
-  const reply = await interaction.reply({ 
+  const reply = await interaction.editReply({ 
     embeds: [createMainHelpEmbed()], 
     components: [row]
   });

@@ -32,27 +32,34 @@ export interface GameplayLogData {
  */
 export async function logGameplayAction(
   interaction: ChatInputCommandInteraction, 
-  data: GameplayLogData
+  data: GameplayLogData,
+  setup?: any
 ): Promise<void>;
 export async function logGameplayAction(
   guild: Guild, 
-  data: GameplayLogData
+  data: GameplayLogData,
+  setup?: any
 ): Promise<void>;
 export async function logGameplayAction(
   interactionOrGuild: ChatInputCommandInteraction | Guild, 
-  data: GameplayLogData
+  data: GameplayLogData,
+  setup?: any
 ): Promise<void> {
   try {
     const guildId = 'guildId' in interactionOrGuild ? interactionOrGuild.guildId! : interactionOrGuild.id;
     const guild = 'guild' in interactionOrGuild ? interactionOrGuild.guild! : interactionOrGuild;
     
-    const setup = await prisma.setup.findUnique({ where: { guildId } });
+    // Use provided setup data or fetch it if not provided
+    const setupData = setup || await prisma.setup.findUnique({ 
+      where: { guildId },
+      select: { insultsChannelId: true }
+    });
 
-    if (!setup?.insultsChannelId) {
+    if (!setupData?.insultsChannelId) {
       return; // Logging is disabled
     }
 
-    const channel = guild.channels.cache.get(setup.insultsChannelId);
+    const channel = guild.channels.cache.get(setupData.insultsChannelId);
     if (!channel?.isTextBased()) {
       return; // Channel not found or not text-based
     }

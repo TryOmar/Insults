@@ -26,7 +26,14 @@ export function createSimplePager(prefix: string) {
       initialPage: number = 1
     ) {
       const page = Math.max(1, Math.min(initialPage, pages.length));
-      await interaction.editReply({ embeds: pages[page - 1], components: buildButtons(page, pages.length) });
+      
+      // Check if interaction has been deferred or replied to
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ embeds: pages[page - 1], components: buildButtons(page, pages.length) });
+      } else {
+        await interaction.reply({ embeds: pages[page - 1], components: buildButtons(page, pages.length) });
+      }
+      
       const sent = await interaction.fetchReply();
       sessions.set(sent.id, { pages, currentPage: page });
       setTimeout(() => sessions.delete(sent.id), 15 * 60 * 1000);

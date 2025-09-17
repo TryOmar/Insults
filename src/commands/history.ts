@@ -24,16 +24,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Defer the interaction to show "thinking" state
+  try {
+    await interaction.deferReply();
+  } catch (error) {
+    // Ignore if already acknowledged
+    console.warn('Failed to defer history interaction:', error);
+  }
+
   // Check role permissions
   const member = await getGuildMember(interaction);
   if (!member) {
-    await safeInteractionReply(interaction, { content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content: 'Unable to verify your permissions.' });
     return;
   }
 
   const roleCheck = await canUseBotCommands(member, false); // false = non-mutating command
   if (!roleCheck.allowed) {
-    await safeInteractionReply(interaction, { content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content: roleCheck.reason || 'You do not have permission to use this command.' });
     return;
   }
 

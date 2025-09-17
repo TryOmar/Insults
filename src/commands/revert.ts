@@ -8,6 +8,7 @@ import { withGuildAndAuth } from '../utils/commandScaffold.js';
 import { parseNumericIds } from '../utils/ids.js';
 import { createSimplePager } from '../utils/simplePager.js';
 import { buildSummaryEmbed } from '../utils/embeds.js';
+import { setupCache } from '../utils/setupCache.js';
 
 export const data = new SlashCommandBuilder()
   .setName('revert')
@@ -24,6 +25,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (!ctx) return;
 
   const { guildId, invokerId, member } = ctx;
+
+  // Get setup data for logging
+  const setup = await setupCache.getSetup(guildId);
 
   const raw = interaction.options.getString('id', true);
 
@@ -50,7 +54,20 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
   // Batch-fetch archives for the requested original IDs, scoped to current guild
-  const archives = await prisma.archive.findMany({ where: { originalInsultId: { in: processedIds }, guildId } });
+  const archives = await prisma.archive.findMany({ 
+    where: { originalInsultId: { in: processedIds }, guildId },
+    select: {
+      originalInsultId: true,
+      guildId: true,
+      userId: true,
+      blamerId: true,
+      insult: true,
+      note: true,
+      createdAt: true,
+      unblamerId: true,
+      unblamedAt: true
+    }
+  });
 
   // Permission filtering
   const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
@@ -68,6 +85,17 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     }
   }
 
+  // Early return if no allowed items
+  if (allowed.length === 0) {
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ No Items to Revert')
+      .setDescription('No archived blames found that you have permission to restore.')
+      .setColor(0xE74C3C)
+      .setTimestamp();
+    await interaction.editReply({ embeds: [errorEmbed] });
+    return;
+  }
+
   // Create insults for allowed in parallel to obtain new IDs
   let creations: PromiseSettledResult<any>[] = [];
   try {
@@ -82,6 +110,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       }
     })));
   } catch (err) {
+    console.error('Revert creation failed:', err);
     const errorEmbed = new EmbedBuilder()
       .setTitle('❌ Revert Failed')
       .setDescription('An error occurred while restoring blames. Please try again later.')
@@ -93,19 +122,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   // Map created results by original id
   const createdByOriginal = new Map<number, any>();
+  const failedCreations: number[] = [];
   creations.forEach((res, idx) => {
     const origId = allowed[idx].originalInsultId;
     if (res.status === 'fulfilled') {
       createdByOriginal.set(origId, res.value);
+    } else {
+      failedCreations.push(origId);
+      results.push({ kind: 'failed', id: origId });
     }
   });
 
-  // Bulk delete archives for successfully created ones
+  // Bulk delete archives for successfully created ones in a single transaction
   const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
   if (originalsToDelete.length > 0) {
     try {
       await prisma.archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
     } catch (err) {
+      console.error('Archive cleanup failed:', err);
       const errorEmbed = new EmbedBuilder()
         .setTitle('⚠️ Partial Revert')
         .setDescription('Some blames were restored but archives could not be cleaned up.')
@@ -135,30 +169,33 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     restoredForLogging.push({ restored: restoredInsult, archive });
   }
 
-  await Promise.allSettled(restoredForLogging.map(({ restored, archive }) => {
-    const revertEmbed = new EmbedBuilder()
-      .setTitle(`Restored Blame #${restored.id}`)
-      .addFields(
-        { name: '**New Blame ID**', value: `#${restored.id}`, inline: true },
-        { name: '**Original ID**', value: `#${archive.originalInsultId}`, inline: true },
-        { name: '**Insult**', value: archive.insult, inline: true },
-        { name: '**Note**', value: archive.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(archive.userId), inline: true },
-        { name: '**Blamer**', value: userMention(archive.blamerId), inline: true },
-        { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(archive.createdAt)), inline: false },
-      )
-      .setColor(0xF39C12)
-      .setTimestamp(new Date());
+  // Parallelize gameplay logging (non-blocking)
+  setImmediate(() => {
+    Promise.allSettled(restoredForLogging.map(({ restored, archive }) => {
+      const revertEmbed = new EmbedBuilder()
+        .setTitle(`Restored Blame #${restored.id}`)
+        .addFields(
+          { name: '**New Blame ID**', value: `#${restored.id}`, inline: true },
+          { name: '**Original ID**', value: `#${archive.originalInsultId}`, inline: true },
+          { name: '**Insult**', value: archive.insult, inline: true },
+          { name: '**Note**', value: archive.note ?? '—', inline: false },
+          { name: '**Insulter**', value: userMention(archive.userId), inline: true },
+          { name: '**Blamer**', value: userMention(archive.blamerId), inline: true },
+          { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(archive.createdAt)), inline: false },
+        )
+        .setColor(0xF39C12)
+        .setTimestamp(new Date());
 
-    return logGameplayAction(interaction, {
-      action: 'revert',
-      target: { id: archive.userId } as any,
-      blamer: { id: archive.blamerId } as any,
-      unblamer: interaction.user,
-      blameId: restored.id,
-      embed: revertEmbed
-    });
-  }));
+      return logGameplayAction(interaction, {
+        action: 'revert',
+        target: { id: archive.userId } as any,
+        blamer: { id: archive.blamerId } as any,
+        unblamer: interaction.user,
+        blameId: restored.id,
+        embed: revertEmbed
+      }, setup);
+    }));
+  });
 
   const restored = results.filter(r => r.kind === 'restored') as Extract<Result, { kind: 'restored' }> [];
   const notFound = results.filter(r => r.kind === 'not_found') as Extract<Result, { kind: 'not_found' }> [];

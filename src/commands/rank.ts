@@ -179,16 +179,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  // Defer the interaction to show "thinking" state
+  try {
+    await interaction.deferReply();
+  } catch (error) {
+    // Ignore if already acknowledged
+    console.warn('Failed to defer rank interaction:', error);
+  }
+
   // Check role permissions
   const member = interaction.member;
   if (!member || typeof member === 'string') {
-    await interaction.reply({ content: 'Unable to verify your permissions.', flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content: 'Unable to verify your permissions.' });
     return;
   }
 
   const roleCheck = await canUseBotCommands(member as any, false); // false = non-mutating command
   if (!roleCheck.allowed) {
-    await interaction.reply({ content: roleCheck.reason || 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content: roleCheck.reason || 'You do not have permission to use this command.' });
     return;
   }
 

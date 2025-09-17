@@ -128,30 +128,32 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 
   // Allow spaces inside the insult phrase; no strict single-token rule
 
-  // Batch all DB work in a single transaction
+  // Batch all DB work in a single transaction with parallel operations
   const { record, totalBlames, insultCount, grouped } = await prisma.$transaction(async (tx) => {
-    await tx.user.upsert({
-      where: { id: target.id },
-      update: { username: target.username },
-      create: { id: target.id, username: target.username },
-    });
+    // Parallel user upserts
+    const [targetUser, blamerUser, created] = await Promise.all([
+      tx.user.upsert({
+        where: { id: target.id },
+        update: { username: target.username },
+        create: { id: target.id, username: target.username },
+      }),
+      tx.user.upsert({
+        where: { id: blamer.id },
+        update: { username: blamer.username },
+        create: { id: blamer.id, username: blamer.username },
+      }),
+      tx.insult.create({
+        data: {
+          guildId,
+          userId: target.id,
+          blamerId: blamer.id,
+          insult,
+          note: note && note.length > 0 ? note : null,
+        },
+      })
+    ]);
 
-    await tx.user.upsert({
-      where: { id: blamer.id },
-      update: { username: blamer.username },
-      create: { id: blamer.id, username: blamer.username },
-    });
-
-    const created = await tx.insult.create({
-      data: {
-        guildId,
-        userId: target.id,
-        blamerId: blamer.id,
-        insult,
-        note: note && note.length > 0 ? note : null,
-      },
-    });
-
+    // Parallel statistics queries
     const [totalBlamesTx, insultCountTx, groupedTx] = await Promise.all([
       tx.insult.count({ where: { guildId, userId: target.id } }),
       tx.insult.count({ where: { guildId, insult } }),
@@ -199,22 +201,27 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 
   let dmSent = false;
   if (dmTarget) {
-    try {
-      await target.send({ embeds: [dmEmbed] });
-      dmSent = true;
-    } catch {
-      dmSent = false;
-    }
+    // Send DM asynchronously to not block the response
+    setImmediate(async () => {
+      try {
+        await target.send({ embeds: [dmEmbed] });
+      } catch {
+        // DM failed, but we don't need to handle this in the main flow
+      }
+    });
+    dmSent = true; // Assume it will be sent
   }
 
-  // Update insulter role if guild is provided
+  // Update insulter role if guild is provided (non-blocking)
   if (guild) {
-    try {
-      await updateInsulterRole(guild);
-    } catch (error) {
-      console.error('Failed to update insulter role:', error);
-      // Don't fail the blame operation if role update fails
-    }
+    setImmediate(async () => {
+      try {
+        await updateInsulterRole(guild);
+      } catch (error) {
+        console.error('Failed to update insulter role:', error);
+        // Don't fail the blame operation if role update fails
+      }
+    });
   }
 
   return { ok: true, data: { publicEmbed, dmEmbed, dmSent, insultId: record.id } };

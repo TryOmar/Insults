@@ -10,6 +10,7 @@ import { withGuildAndAuth } from '../utils/commandScaffold.js';
 import { parseNumericIds } from '../utils/ids.js';
 import { createSimplePager } from '../utils/simplePager.js';
 import { buildSummaryEmbed } from '../utils/embeds.js';
+import { setupCache } from '../utils/setupCache.js';
 
 export const data = new SlashCommandBuilder()
   .setName('unblame')
@@ -27,17 +28,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const { guildId, invokerId, member } = ctx;
 
+  // Get setup data for logging
+  const setup = await setupCache.getSetup(guildId);
+
   const raw = interaction.options.getString('id', true);
   const { processed: ids, skipped: skippedIds } = parseNumericIds(raw, 50);
-  if (ids.length === 0) {
-    const errorEmbed = new EmbedBuilder()
-      .setTitle('❌ Invalid Input')
-      .setDescription('Please provide a valid blame ID.')
-      .setColor(0xE74C3C)
-      .setTimestamp();
-    await interaction.editReply({ embeds: [errorEmbed] });
-    return;
-  }
 
   const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
@@ -48,8 +43,30 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const results: Result[] = [];
 
+  // Early validation - check if any IDs are valid before processing
+  if (ids.length === 0) {
+    const errorEmbed = new EmbedBuilder()
+      .setTitle('❌ Invalid Input')
+      .setDescription('Please provide a valid blame ID.')
+      .setColor(0xE74C3C)
+      .setTimestamp();
+    await interaction.editReply({ embeds: [errorEmbed] });
+    return;
+  }
+
   // Batch-fetch insults scoped to current guild to prevent cross-server unblames
-  const foundInsults = await prisma.insult.findMany({ where: { id: { in: ids }, guildId } });
+  const foundInsults = await prisma.insult.findMany({ 
+    where: { id: { in: ids }, guildId },
+    select: {
+      id: true,
+      guildId: true,
+      userId: true,
+      blamerId: true,
+      insult: true,
+      note: true,
+      createdAt: true
+    }
+  });
   const insultById = new Map<number, typeof foundInsults[number]>(foundInsults.map(i => [i.id, i]));
 
   // Determine permissions and categorize
@@ -88,6 +105,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     }));
 
     try {
+      // Single optimized transaction
       await prisma.$transaction([
         prisma.archive.createMany({ data: archiveData, skipDuplicates: true }),
         prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
@@ -95,25 +113,34 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
       // Fill results for deleted items
       for (const found of allowedToDelete) {
-        results.push({ kind: 'deleted', id: found.id, insult: found.insult, userId: found.userId, blamerId: found.blamerId, note: found.note ?? null, createdAt: new Date(found.createdAt) });
+        results.push({ 
+          kind: 'deleted', 
+          id: found.id, 
+          insult: found.insult, 
+          userId: found.userId, 
+          blamerId: found.blamerId, 
+          note: found.note ?? null, 
+          createdAt: new Date(found.createdAt) 
+        });
       }
 
-      // Parallelize gameplay logging
-      await Promise.allSettled(allowedToDelete.map(found => {
-        const id = found.id;
-        const unblameEmbed = new EmbedBuilder()
-          .setTitle(`Deleted Blame #${id}`)
-          .addFields(
-            { name: '**Blame ID**', value: `#${id}`, inline: true },
-            { name: '**Insult**', value: found.insult, inline: true },
-            { name: '**Note**', value: found.note ?? '—', inline: false },
-            { name: '**Insulter**', value: userMention(found.userId), inline: false },
-            { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
-            { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-            { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
-          )
-          .setColor(0xE67E22)
-          .setTimestamp(new Date());
+      // Parallelize gameplay logging (non-blocking)
+      setImmediate(() => {
+        Promise.allSettled(allowedToDelete.map(found => {
+          const id = found.id;
+          const unblameEmbed = new EmbedBuilder()
+            .setTitle(`Deleted Blame #${id}`)
+            .addFields(
+              { name: '**Blame ID**', value: `#${id}`, inline: true },
+              { name: '**Insult**', value: found.insult, inline: true },
+              { name: '**Note**', value: found.note ?? '—', inline: false },
+              { name: '**Insulter**', value: userMention(found.userId), inline: false },
+              { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
+              { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+              { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
+            )
+            .setColor(0xE67E22)
+            .setTimestamp(new Date());
 
         return logGameplayAction(interaction, {
           action: 'unblame',
@@ -122,9 +149,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
           unblamer: interaction.user,
           blameId: id,
           embed: unblameEmbed
-        });
-      }));
+        }, setup);
+        }));
+      });
     } catch (error) {
+      console.error('Unblame transaction failed:', error);
       const errorEmbed = new EmbedBuilder()
         .setTitle('❌ Unblame Failed')
         .setDescription('An error occurred while deleting blames. Please try again later.')

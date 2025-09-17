@@ -9,43 +9,39 @@ export interface RoleCheckResult {
 /**
  * Check if a user can use mutating commands (blame, unblame, revert, radar, archive)
  */
-export async function canUseMutatingCommands(member: GuildMember): Promise<RoleCheckResult> {
-  const setup = await prisma.setup.findUnique({ where: { guildId: member.guild.id } });
-
+export async function canUseMutatingCommands(member: GuildMember, setup?: any): Promise<RoleCheckResult> {
   // If no blamer role is set, all users can use mutating commands
-  if (!(setup as any)?.blamerRoleId) {
+  if (!setup?.blamerRoleId) {
     return { allowed: true };
   }
 
   // Check if user has the blamer role
-  const hasBlamerRole = member.roles.cache.has((setup as any).blamerRoleId);
+  const hasBlamerRole = member.roles.cache.has(setup.blamerRoleId);
   if (hasBlamerRole) {
     return { allowed: true };
   }
 
   return { 
     allowed: false, 
-    reason: `You need the <@&${(setup as any).blamerRoleId}> role to use this command.` 
+    reason: `You need the <@&${setup.blamerRoleId}> role to use this command.` 
   };
 }
 
 /**
  * Check if a user is frozen (blocked from using any bot commands)
  */
-export async function isUserFrozen(member: GuildMember): Promise<RoleCheckResult> {
-  const setup = await prisma.setup.findUnique({ where: { guildId: member.guild.id } });
-
+export async function isUserFrozen(member: GuildMember, setup?: any): Promise<RoleCheckResult> {
   // If no frozen role is set, no users are blocked
-  if (!(setup as any)?.frozenRoleId) {
+  if (!setup?.frozenRoleId) {
     return { allowed: true };
   }
 
   // Check if user has the frozen role
-  const hasFrozenRole = member.roles.cache.has((setup as any).frozenRoleId);
+  const hasFrozenRole = member.roles.cache.has(setup.frozenRoleId);
   if (hasFrozenRole) {
     return { 
       allowed: false, 
-      reason: `You have the <@&${(setup as any).frozenRoleId}> role and cannot use bot commands.` 
+      reason: `You have the <@&${setup.frozenRoleId}> role and cannot use bot commands.` 
     };
   }
 
@@ -54,17 +50,27 @@ export async function isUserFrozen(member: GuildMember): Promise<RoleCheckResult
 
 /**
  * Check if a user can use any bot command (combines frozen check with mutating check)
+ * This function now fetches setup data once and passes it to the other functions
  */
 export async function canUseBotCommands(member: GuildMember, isMutatingCommand: boolean = false): Promise<RoleCheckResult> {
+  // Fetch setup data once
+  const setup = await prisma.setup.findUnique({ 
+    where: { guildId: member.guild.id },
+    select: {
+      blamerRoleId: true,
+      frozenRoleId: true
+    }
+  });
+
   // First check if user is frozen
-  const frozenCheck = await isUserFrozen(member);
+  const frozenCheck = await isUserFrozen(member, setup);
   if (!frozenCheck.allowed) {
     return frozenCheck;
   }
 
   // If it's a mutating command, check blamer role
   if (isMutatingCommand) {
-    return await canUseMutatingCommands(member);
+    return await canUseMutatingCommands(member, setup);
   }
 
   // For non-mutating commands, just check if not frozen
