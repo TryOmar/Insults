@@ -1,4 +1,4 @@
-import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction, MessageFlags, MessageContextMenuCommandInteraction } from 'discord.js';
+import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction, MessageFlags, MessageContextMenuCommandInteraction, UserContextMenuCommandInteraction } from 'discord.js';
 import { isInteractionExpired, isDiscordAPIError, isInteractionInvalidError } from '../utils/interactionValidation.js';
 import * as blame from '../commands/blame.js';
 import * as rank from '../commands/rank.js';
@@ -12,6 +12,7 @@ import * as insults from '../commands/insults.js';
 import * as clear from '../commands/clear.js';
 import * as config from '../commands/config.js';
 import * as blameMessageContext from '../commands/blameMessageContext.js';
+import * as blameUserContext from '../commands/blameUserContext.js';
 import { BlameButton } from '../utils/BlameButton.js';
 
 
@@ -122,6 +123,26 @@ export async function handleInteraction(interaction: Interaction) {
       } catch (error) {
         if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.error('Error handling message context menu Blame Message:', error);
+        }
+        if (!ctx.replied && !ctx.deferred) {
+          try {
+            await ctx.reply({ content: 'An error occurred while processing your request.', flags: MessageFlags.Ephemeral });
+          } catch {}
+        }
+      }
+    }
+    return;
+  }
+
+  // User context menu command
+  if (interaction.isUserContextMenuCommand()) {
+    const ctx = interaction as UserContextMenuCommandInteraction;
+    if (ctx.commandName === 'Blame User') {
+      try {
+        await blameUserContext.execute(ctx);
+      } catch (error) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+          console.error('Error handling user context menu Blame User:', error);
         }
         if (!ctx.replied && !ctx.deferred) {
           try {
