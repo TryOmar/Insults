@@ -35,7 +35,7 @@ export class BlameButton {
     return new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(selectMenu);
   }
 
-  static createBlameModal(targetUserId?: string): ModalBuilder {
+  static createBlameModal(targetUserId?: string, defaultInsult?: string, defaultNote?: string): ModalBuilder {
     const insultInput = new TextInputBuilder()
       .setCustomId('blame:insult')
       .setLabel('Insult (1-3 words)')
@@ -51,6 +51,13 @@ export class BlameButton {
       .setPlaceholder('Add a note about this blame...')
       .setRequired(false)
       .setMaxLength(1000);
+
+    if (defaultInsult) {
+      insultInput.setValue(defaultInsult);
+    }
+    if (typeof defaultNote === 'string' && defaultNote.length > 0) {
+      noteInput.setValue(defaultNote);
+    }
 
     const insultRow = new ActionRowBuilder<TextInputBuilder>().addComponents(insultInput);
     const noteRow = new ActionRowBuilder<TextInputBuilder>().addComponents(noteInput);

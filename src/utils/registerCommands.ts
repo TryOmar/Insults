@@ -11,10 +11,11 @@ import { data as archive } from '../commands/archive.js';
 import { data as revert } from '../commands/revert.js';
 import { data as clear } from '../commands/clear.js';
 import { data as configCommand } from '../commands/config.js';
+import { data as blameMessage } from '../commands/blameMessage.js';
 
 export async function registerAllCommands(guilds?: Map<string, any>) {
   const rest = new REST({ version: '10' }).setToken(config.token);
-  const commandJson = [blame, rank, detail, unblame, help, history, insults, archive, revert, clear, configCommand].map((c) => c.toJSON());
+  const commandJson = [blame, rank, detail, unblame, help, history, insults, archive, revert, clear, configCommand, blameMessage].map((c) => c.toJSON());
 
   console.log('— Slash Command Registration —');
   console.log(`Client ID: ${config.clientId}`);

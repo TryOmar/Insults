@@ -1,4 +1,4 @@
-import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction, MessageFlags } from 'discord.js';
+import { Interaction, TextChannel, ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction, UserSelectMenuInteraction, MessageFlags, MessageContextMenuCommandInteraction } from 'discord.js';
 import { isInteractionExpired, isDiscordAPIError, isInteractionInvalidError } from '../utils/interactionValidation.js';
 import * as blame from '../commands/blame.js';
 import * as rank from '../commands/rank.js';
@@ -11,6 +11,7 @@ import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as clear from '../commands/clear.js';
 import * as config from '../commands/config.js';
+import * as blameMessage from '../commands/blameMessage.js';
 import { BlameButton } from '../utils/BlameButton.js';
 
 
@@ -109,6 +110,26 @@ export async function handleInteraction(interaction: Interaction) {
       }
     }
 
+    return;
+  }
+
+  // Message context menu command
+  if (interaction.isMessageContextMenuCommand()) {
+    const ctx = interaction as MessageContextMenuCommandInteraction;
+    if (ctx.commandName === 'Blame Message') {
+      try {
+        await blameMessage.execute(ctx);
+      } catch (error) {
+        if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
+          console.error('Error handling message context menu Blame Message:', error);
+        }
+        if (!ctx.replied && !ctx.deferred) {
+          try {
+            await ctx.reply({ content: 'An error occurred while processing your request.', flags: MessageFlags.Ephemeral });
+          } catch {}
+        }
+      }
+    }
     return;
   }
 
