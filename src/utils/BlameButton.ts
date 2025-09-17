@@ -3,9 +3,6 @@ import {
   ButtonBuilder, 
   ButtonStyle, 
   UserSelectMenuBuilder, 
-  ModalBuilder, 
-  TextInputBuilder, 
-  TextInputStyle,
   UserSelectMenuInteraction,
   ModalSubmitInteraction,
   User,
@@ -16,6 +13,7 @@ import { blameUser, BlameParams } from '../services/blame.js';
 import { isDiscordAPIError, isInteractionInvalidError, getGuildMember } from './interactionValidation.js';
 import { logGameplayAction } from './channelLogging.js';
 import { canUseBotCommands } from './roleValidation.js';
+import { BlameModal } from './BlameModal.js';
 
 export class BlameButton {
   static createBlameButton(): ButtonBuilder {
@@ -35,39 +33,8 @@ export class BlameButton {
     return new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(selectMenu);
   }
 
-  static createBlameModal(targetUserId?: string, defaultInsult?: string, defaultNote?: string): ModalBuilder {
-    const insultInput = new TextInputBuilder()
-      .setCustomId('blame:insult')
-      .setLabel('Insult (1-3 words)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Enter the insult...')
-      .setRequired(true)
-      .setMaxLength(140);
-
-    const noteInput = new TextInputBuilder()
-      .setCustomId('blame:note')
-      .setLabel('Note (optional)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Add a note about this blame...')
-      .setRequired(false)
-      .setMaxLength(1000);
-
-    if (defaultInsult) {
-      insultInput.setValue(defaultInsult);
-    }
-    if (typeof defaultNote === 'string' && defaultNote.length > 0) {
-      noteInput.setValue(defaultNote);
-    }
-
-    const insultRow = new ActionRowBuilder<TextInputBuilder>().addComponents(insultInput);
-    const noteRow = new ActionRowBuilder<TextInputBuilder>().addComponents(noteInput);
-
-    const customId = targetUserId ? `blame:modal-submit:${targetUserId}` : 'blame:modal-submit';
-
-    return new ModalBuilder()
-      .setCustomId(customId)
-      .setTitle('Blame User')
-      .addComponents(insultRow, noteRow);
+  static createBlameModal(targetUserId?: string, defaultInsult?: string, defaultNote?: string) {
+    return BlameModal.create(targetUserId, defaultInsult, defaultNote);
   }
 
   static async handleUserSelect(interaction: UserSelectMenuInteraction): Promise<void> {

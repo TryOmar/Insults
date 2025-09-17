@@ -1,5 +1,5 @@
 import { ApplicationCommandType, ContextMenuCommandBuilder, MessageContextMenuCommandInteraction, MessageFlags } from 'discord.js';
-import { BlameButton } from '../utils/BlameButton.js';
+import { BlameModal } from '../utils/BlameModal.js';
 
 export const data = new ContextMenuCommandBuilder()
   .setName('Blame Message')
@@ -33,11 +33,9 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
   const link = `https://discord.com/channels/${guildId}/${interaction.channelId}/${targetMessage.id}`;
 
   // Pre-fill note: quoted content then link on new line; ensure <= 1000 chars
-  const prefilledNoteRaw = `"${content}"\n${link}`;
+  const prefilledNoteRaw = `${content}\n\n${link}`;
   const prefilledNote = prefilledNoteRaw.length > 1000 ? prefilledNoteRaw.slice(0, 1000) : prefilledNoteRaw;
 
-  const modal = BlameButton.createBlameModal(author.id, undefined, prefilledNote);
+  const modal = BlameModal.create(author.id, undefined, prefilledNote);
   await interaction.showModal(modal);
 }
-
-

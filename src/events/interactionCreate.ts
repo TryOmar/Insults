@@ -11,7 +11,7 @@ import * as history from '../commands/history.js';
 import * as insults from '../commands/insults.js';
 import * as clear from '../commands/clear.js';
 import * as config from '../commands/config.js';
-import * as blameMessage from '../commands/blameMessage.js';
+import * as blameMessageContext from '../commands/blameMessageContext.js';
 import { BlameButton } from '../utils/BlameButton.js';
 
 
@@ -118,7 +118,7 @@ export async function handleInteraction(interaction: Interaction) {
     const ctx = interaction as MessageContextMenuCommandInteraction;
     if (ctx.commandName === 'Blame Message') {
       try {
-        await blameMessage.execute(ctx);
+        await blameMessageContext.execute(ctx);
       } catch (error) {
         if (!(isDiscordAPIError(error) && isInteractionInvalidError(error))) {
           console.error('Error handling message context menu Blame Message:', error);
