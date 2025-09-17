@@ -1,5 +1,6 @@
 import { GuildMember, Role } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { setupCache } from './setupCache.js';
 
 export interface RoleCheckResult {
   allowed: boolean;
@@ -53,14 +54,8 @@ export async function isUserFrozen(member: GuildMember, setup?: any): Promise<Ro
  * This function now fetches setup data once and passes it to the other functions
  */
 export async function canUseBotCommands(member: GuildMember, isMutatingCommand: boolean = false): Promise<RoleCheckResult> {
-  // Fetch setup data once
-  const setup = await prisma.setup.findUnique({ 
-    where: { guildId: member.guild.id },
-    select: {
-      blamerRoleId: true,
-      frozenRoleId: true
-    }
-  });
+  // Fetch setup data once using cache
+  const setup = await setupCache.getSetup(member.guild.id);
 
   // First check if user is frozen
   const frozenCheck = await isUserFrozen(member, setup);
@@ -112,15 +107,13 @@ export async function getTopInsulter(guildId: string, days: number = 0): Promise
  * Update the insulter role for a guild
  */
 export async function updateInsulterRole(guildId: string): Promise<void> {
-  const setup = await prisma.setup.findUnique({
-    where: { guildId }
-  });
+  const setup = await setupCache.getSetup(guildId);
 
-  if (!(setup as any)?.insulterRoleId) {
+  if (!setup?.insulterRoleId) {
     return; // Auto-assignment is disabled
   }
 
-  const topInsulter = await getTopInsulter(guildId, (setup as any).insulterDays);
+  const topInsulter = await getTopInsulter(guildId, setup.insulterDays);
   
   if (!topInsulter) {
     return; // No insults found

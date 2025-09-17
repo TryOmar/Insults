@@ -10,6 +10,7 @@ import {
 import { prisma } from '../database/client.js';
 import { safeInteractionReply } from '../utils/interactionValidation.js';
 import { withSpamProtection } from '../utils/commandWrapper.js';
+import { setupCache } from '../utils/setupCache.js';
 
 export const data = new SlashCommandBuilder()
   .setName('config')
@@ -156,6 +157,18 @@ async function handleBlamerRole(interaction: ChatInputCommandInteraction, guildI
     }
   });
 
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
+  });
+
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Blamer Role Updated')
@@ -181,6 +194,18 @@ async function handleFrozenRole(interaction: ChatInputCommandInteraction, guildI
       guildId, 
       frozenRoleId: isDisabled ? null : role.id 
     }
+  });
+
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
   });
 
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
@@ -210,6 +235,18 @@ async function handleInsulterRole(interaction: ChatInputCommandInteraction, guil
     }
   });
 
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
+  });
+
   const status = isDisabled ? 'disabled' : `set to ${role?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Insulter Role Updated')
@@ -233,6 +270,18 @@ async function handleInsulterDays(interaction: ChatInputCommandInteraction, guil
       guildId, 
       insulterDays: days 
     }
+  });
+
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
   });
 
   const timeWindow = days === 0 ? 'all-time' : `last ${days} days`;
@@ -261,6 +310,18 @@ async function handleMonitorChannel(interaction: ChatInputCommandInteraction, gu
     }
   });
 
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
+  });
+
   const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Monitor Channel Updated')
@@ -287,6 +348,18 @@ async function handleInsultsChannel(interaction: ChatInputCommandInteraction, gu
     }
   });
 
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
+  });
+
   const status = isDisabled ? 'disabled' : `set to ${channel?.name || 'Unknown'}`;
   const embed = new EmbedBuilder()
     .setTitle('✅ Insults Channel Updated')
@@ -299,9 +372,7 @@ async function handleInsultsChannel(interaction: ChatInputCommandInteraction, gu
 }
 
 async function handleViewConfig(interaction: ChatInputCommandInteraction, guildId: string) {
-  const setup = await prisma.setup.findUnique({
-    where: { guildId }
-  });
+  const setup = await setupCache.getSetup(guildId);
 
   console.log('Config view - Guild ID:', guildId);
   console.log('Config view - Setup data:', setup);
@@ -381,6 +452,18 @@ async function handleRadarMode(interaction: ChatInputCommandInteraction, guildId
     } as any // Type assertion until Prisma client is regenerated
   });
 
+  // Update cache with the new setup data
+  setupCache.updateCache(guildId, {
+    guildId: setup.guildId,
+    blamerRoleId: setup.blamerRoleId,
+    frozenRoleId: setup.frozenRoleId,
+    insultsChannelId: setup.insultsChannelId,
+    monitorChannelId: setup.monitorChannelId,
+    insulterRoleId: setup.insulterRoleId,
+    insulterDays: setup.insulterDays,
+    radarMode: setup.radarMode
+  });
+
   const modeDescriptions = {
     'off': 'disabled',
     'blame': 'set to blame mode (only blames users)',
@@ -401,9 +484,7 @@ async function handleRadarMode(interaction: ChatInputCommandInteraction, guildId
 
 async function logToMonitorChannel(interaction: ChatInputCommandInteraction, message: string) {
   try {
-    const setup = await prisma.setup.findUnique({
-      where: { guildId: interaction.guildId! }
-    });
+    const setup = await setupCache.getSetup(interaction.guildId!);
 
     if (setup?.monitorChannelId) {
       const channel = interaction.guild?.channels.cache.get(setup.monitorChannelId);

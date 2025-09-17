@@ -7,6 +7,7 @@ import {
   ChannelType
 } from 'discord.js';
 import { prisma } from '../database/client.js';
+import { setupCache } from './setupCache.js';
 
 export interface GameplayLogData {
   action: 'blame' | 'unblame' | 'revert' | 'radar' | 'radar-blame' | 'radar-delete' | 'radar-both' | 'insulter-role-update';
@@ -49,11 +50,8 @@ export async function logGameplayAction(
     const guildId = 'guildId' in interactionOrGuild ? interactionOrGuild.guildId! : interactionOrGuild.id;
     const guild = 'guild' in interactionOrGuild ? interactionOrGuild.guild! : interactionOrGuild;
     
-    // Use provided setup data or fetch it if not provided
-    const setupData = setup || await prisma.setup.findUnique({ 
-      where: { guildId },
-      select: { insultsChannelId: true }
-    });
+    // Use provided setup data or fetch it from cache if not provided
+    const setupData = setup || await setupCache.getSetup(guildId);
 
     if (!setupData?.insultsChannelId) {
       return; // Logging is disabled
@@ -91,7 +89,7 @@ export async function logSystemNotification(
   color: number = 0x5865F2
 ): Promise<void> {
   try {
-    const setup = await prisma.setup.findUnique({ where: { guildId: guild.id } });
+    const setup = await setupCache.getSetup(guild.id);
 
     if (!setup?.monitorChannelId) {
       return; // Logging is disabled

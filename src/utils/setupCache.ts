@@ -9,19 +9,19 @@ interface SetupData {
   insulterRoleId: string | null;
   insulterDays: number;
   radarMode: string;
-  cachedAt: number;
 }
 
 class SetupCache {
   private cache = new Map<string, SetupData>();
-  private readonly TTL = 5 * 60 * 1000; // 5 minutes
 
+  /**
+   * Get setup data for a guild with lazy loading
+   * Returns cached data if available, otherwise fetches from DB and caches it
+   */
   async getSetup(guildId: string): Promise<SetupData | null> {
+    // Check if already cached
     const cached = this.cache.get(guildId);
-    const now = Date.now();
-
-    // Return cached data if it's still valid
-    if (cached && (now - cached.cachedAt) < this.TTL) {
+    if (cached) {
       return cached;
     }
 
@@ -45,26 +45,36 @@ class SetupCache {
     }
 
     // Cache the result
-    const setupData: SetupData = {
-      ...setup,
-      cachedAt: now
-    };
-    this.cache.set(guildId, setupData);
-
-    return setupData;
+    this.cache.set(guildId, setup);
+    return setup;
   }
 
-  // Invalidate cache for a guild (call when setup is updated)
+  /**
+   * Update cache with new setup data (used after upsert operations)
+   * This ensures cache stays in sync with database changes
+   */
+  updateCache(guildId: string, setupData: SetupData): void {
+    this.cache.set(guildId, setupData);
+  }
+
+  /**
+   * Invalidate cache for a guild (call when setup is updated)
+   * Forces next getSetup call to fetch from database
+   */
   invalidate(guildId: string): void {
     this.cache.delete(guildId);
   }
 
-  // Clear all cache
+  /**
+   * Clear all cache entries
+   */
   clear(): void {
     this.cache.clear();
   }
 
-  // Get cache stats for debugging
+  /**
+   * Get cache statistics for debugging
+   */
   getStats(): { size: number; entries: string[] } {
     return {
       size: this.cache.size,

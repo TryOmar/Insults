@@ -5,6 +5,7 @@ import { guildSetupService } from '../services/guildSetup.js';
 import { checkCooldown } from '../utils/cooldown.js';
 import { generateInsultCandidates } from './insultUtils.js';
 import { logGameplayAction } from './channelLogging.js';
+import { setupCache } from './setupCache.js';
 
 /**
  * Handles when the bot is mentioned in a message

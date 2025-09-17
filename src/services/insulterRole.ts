@@ -1,6 +1,7 @@
 import { Guild, GuildMember, User } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { logGameplayAction, logRoleAssignmentIssue } from '../utils/channelLogging.js';
+import { setupCache } from '../utils/setupCache.js';
 
 export interface InsulterRoleResult {
   success: boolean;
@@ -14,9 +15,7 @@ export interface InsulterRoleResult {
  */
 export async function updateInsulterRole(guild: Guild): Promise<InsulterRoleResult> {
   try {
-    const setup = await prisma.setup.findUnique({
-      where: { guildId: guild.id }
-    });
+    const setup = await setupCache.getSetup(guild.id);
 
     if (!setup?.insulterRoleId) {
       return { success: true }; // Auto-assignment is disabled

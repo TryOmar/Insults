@@ -1,5 +1,6 @@
 import { prisma } from '../database/client.js';
 import { withRetry } from '../database/retry.js';
+import { setupCache } from '../utils/setupCache.js';
 
 /**
  * Service for managing guild setup and configuration
@@ -58,9 +59,8 @@ export class GuildSetupService {
    */
   public async getRadarMode(guildId: string): Promise<string> {
     try {
-      const setup = await prisma.setup.findUnique({ where: { guildId } });
-      // Type assertion to handle schema change until Prisma client is regenerated
-      return (setup as any)?.radarMode ?? 'off';
+      const setup = await setupCache.getSetup(guildId);
+      return setup?.radarMode ?? 'off';
     } catch (error) {
       console.warn(`⚠️ Failed to check radar mode for guild ${guildId}:`, error);
       return 'off';
