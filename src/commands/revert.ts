@@ -205,9 +205,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Build summary text for all pages
   const summaryLines: string[] = [];
   if (restored.length > 0) {
-    const restoredText = restoredForLogging.map(({ restored, archive }) => 
-      `${archive.id}→${restored.id}`
-    ).join(', ');
+    const restoredText = restoredForLogging.map(({ restored }) => String(restored.id)).join(', ');
     summaryLines.push(`🟢 Restored: ${restoredText}`);
   }
   if (notFound.length > 0) {
@@ -227,15 +225,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const pages: Page[] = [];
 
   for (const d of restored) {
-    // Find the corresponding archive (same ID)
-    const archive = restoredForLogging.find(({ restored }) => restored.id === d.id)?.archive;
-    const originalId = archive?.id;
-    
     const embed = new EmbedBuilder()
       .setTitle(`Restored Blame ${d.id}`)
       .addFields(
-        { name: '**New Blame ID**', value: `${d.id}`, inline: true },
-        { name: '**Original ID**', value: `${originalId}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
         { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
         { name: '**Note**', value: d.note ?? '—', inline: false },
@@ -255,15 +247,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const embedGenerator = () => {
     const dynamicPages: Page[] = [];
     for (const d of restored) {
-      // Find the corresponding archive (same ID)
-      const archive = restoredForLogging.find(({ restored }) => restored.id === d.id)?.archive;
-      const originalId = archive?.id;
-      
       const embed = new EmbedBuilder()
         .setTitle(`Restored Blame ${d.id}`)
         .addFields(
-          { name: '**New Blame ID**', value: `${d.id}`, inline: true },
-          { name: '**Original ID**', value: `${originalId}`, inline: true },
           { name: '**Insult**', value: d.insult, inline: true },
           { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
           { name: '**Note**', value: d.note ?? '—', inline: false },
