@@ -77,9 +77,13 @@ const pager = new PaginationManager<any>({
     const { items, currentPage, totalPages, extra } = data;
     if (!items.length) {
       // Show summary-only embed when nothing to display
-      const parseCsv = (s: string | undefined) => (s && s !== '-' ? s.split('.').filter(Boolean) : []);
-      const notFound = parseCsv(extra?.notFoundCsv);
-      const skipped = parseCsv(extra?.skippedCsv);
+      const parseCsvNumeric = (s: string | undefined) => (s && s !== '-' ? s
+        .split('.')
+        .filter(Boolean)
+        .filter(token => /^\d+$/.test(token))
+      : []);
+      const notFound = parseCsvNumeric(extra?.notFoundCsv);
+      const skipped = parseCsvNumeric(extra?.skippedCsv);
       const summaryLines: string[] = [];
       if (notFound.length) summaryLines.push(`🔴 Not found: ${notFound.join(', ')}`);
       if (skipped.length) summaryLines.push(`↩️ Skipped: ${skipped.join(', ')}`);
@@ -124,9 +128,13 @@ const pager = new PaginationManager<any>({
       embed.setTitle(isArchived ? `🗑️ Archived - Blame #${currentId}` : `Blame #${currentId}`);
     }
     // Summary lines
-    const parseCsv = (s: string | undefined) => (s && s !== '-' ? s.split('.').filter(Boolean) : []);
-    const notFound = parseCsv(extra?.notFoundCsv);
-    const skipped = parseCsv(extra?.skippedCsv);
+    const parseCsvNumeric = (s: string | undefined) => (s && s !== '-' ? s
+      .split('.')
+      .filter(Boolean)
+      .filter(token => /^\d+$/.test(token))
+    : []);
+    const notFound = parseCsvNumeric(extra?.notFoundCsv);
+    const skipped = parseCsvNumeric(extra?.skippedCsv);
     const found = (extra?.ids as number[] | undefined) ?? [];
     const summaryLines: string[] = [];
     if (found.length) summaryLines.push(`🟢 Found: ${found.join(', ')}`);
