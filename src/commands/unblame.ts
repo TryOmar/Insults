@@ -129,14 +129,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         Promise.allSettled(allowedToDelete.map(found => {
           const id = found.id;
           const unblameEmbed = new EmbedBuilder()
-            .setTitle(`Deleted Blame #${id}`)
+            .setTitle(`Deleted Blame ${id}`)
             .addFields(
-              //{ name: '**Blame ID**', value: `#${id}`, inline: true },
               { name: '**Insult**', value: found.insult, inline: true },
-              { name: '**Insulter**', value: userMention(found.userId), inline: true },
-              { name: '**Note**', value: found.note ?? '—', inline: false },
-              { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
               { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+              { name: '**Note**', value: found.note ?? '—', inline: false },
+              { name: '**Insulter**', value: userMention(found.userId), inline: true },
+              { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
               { name: '**When blamed**', value: `<t:${Math.floor(new Date(found.createdAt).getTime() / 1000)}:R>`, inline: false },
             )
             .setColor(0xE67E22)
@@ -231,12 +230,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     const embed = new EmbedBuilder()
       .setTitle(`Deleted Blame ${d.id}`)
       .addFields(
-        //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
-        { name: '**Insulter**', value: userMention(d.userId), inline: true },
-        { name: '**Note**', value: d.note ?? '—', inline: false },
-        { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
         { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+        { name: '**Note**', value: d.note ?? '—', inline: false },
+        { name: '**Insulter**', value: userMention(d.userId), inline: true },
+        { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
         { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
         { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
       )
@@ -254,12 +252,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       const embed = new EmbedBuilder()
         .setTitle(`Deleted Blame ${d.id}`)
         .addFields(
-          //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
           { name: '**Insult**', value: d.insult, inline: true },
-          { name: '**Insulter**', value: userMention(d.userId), inline: true },
-          { name: '**Note**', value: d.note ?? '—', inline: false },
-          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
           { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+          { name: '**Note**', value: d.note ?? '—', inline: false },
+          { name: '**Insulter**', value: userMention(d.userId), inline: true },
+          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
           { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
           { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
         )
