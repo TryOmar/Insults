@@ -43,22 +43,17 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // First check active insults
-  let record = await prisma.insult.findUnique({ where: { id, guildId } });
+  // First check active insults (use findFirst to safely scope by guildId + id)
+  let record = await prisma.insult.findFirst({ where: { id, guildId } });
   let isArchived = false;
 
-  // If not found in active insults, check archived insults by original insult ID
+  // If not found in active insults, check archived insults by same ID
   if (!record) {
-    const archivedRecord = await (prisma as any).archive.findUnique({ 
-      where: { 
-        originalInsultId: id,
-        guildId: guildId
-      } 
-    });
+    const archivedRecord = await (prisma as any).archive.findFirst({ where: { id, guildId } });
     if (archivedRecord) {
       // Convert archived record to match the expected format
       record = {
-        id: archivedRecord.originalInsultId, // Use the original insult ID
+        id: archivedRecord.id,
         guildId: archivedRecord.guildId,
         userId: archivedRecord.userId,
         blamerId: archivedRecord.blamerId,

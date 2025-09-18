@@ -130,6 +130,20 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
 
   // Batch all DB work in a single transaction with parallel operations
   const { record, totalBlames, insultCount, grouped } = await prisma.$transaction(async (tx) => {
+    // Get the next available ID for this guild
+    const [maxInsult, maxArchive] = await Promise.all([
+      tx.insult.aggregate({
+        _max: { id: true },
+        where: { guildId },
+      }),
+      tx.archive.aggregate({
+        _max: { id: true },
+        where: { guildId },
+      }),
+    ]);
+
+    const nextId = Math.max(maxInsult._max.id ?? 0, maxArchive._max.id ?? 0) + 1;
+
     // Parallel user upserts
     const [targetUser, blamerUser, created] = await Promise.all([
       tx.user.upsert({
@@ -144,6 +158,7 @@ export async function blameUser(params: BlameParams): Promise<{ ok: true; data: 
       }),
       tx.insult.create({
         data: {
+          id: nextId,
           guildId,
           userId: target.id,
           blamerId: blamer.id,

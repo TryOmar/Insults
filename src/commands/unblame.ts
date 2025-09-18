@@ -56,7 +56,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   // Batch-fetch insults scoped to current guild to prevent cross-server unblames
   const foundInsults = await prisma.insult.findMany({ 
-    where: { id: { in: ids }, guildId },
+    where: { guildId, id: { in: ids } },
     select: {
       id: true,
       guildId: true,
@@ -92,24 +92,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (allowedToDelete.length > 0) {
-    // Archive all allowed insults, skip duplicates if some were already archived
-    const archiveData = allowedToDelete.map(found => ({
-      originalInsultId: found.id,
-      guildId: found.guildId,
-      userId: found.userId,
-      blamerId: found.blamerId,
-      insult: found.insult,
-      note: found.note ?? null,
-      createdAt: new Date(found.createdAt),
-      unblamerId: invokerId,
-    }));
-
     try {
-      // Single optimized transaction
-      await prisma.$transaction([
-        prisma.archive.createMany({ data: archiveData, skipDuplicates: true }),
-        prisma.insult.deleteMany({ where: { id: { in: allowedToDelete.map(i => i.id) }, guildId } })
-      ]);
+      // Single optimized transaction - archive and delete in one go
+      await prisma.$transaction(async (tx) => {
+        // Create archive records with the same ID
+        const archiveData = allowedToDelete.map(found => ({
+          id: found.id,
+          guildId: found.guildId,
+          userId: found.userId,
+          blamerId: found.blamerId,
+          insult: found.insult,
+          note: found.note ?? null,
+          createdAt: new Date(found.createdAt),
+          unblamerId: invokerId,
+        }));
+
+        await tx.archive.createMany({ data: archiveData, skipDuplicates: true });
+        await tx.insult.deleteMany({ where: { guildId, id: { in: allowedToDelete.map(i => i.id) } } });
+      });
 
       // Fill results for deleted items
       for (const found of allowedToDelete) {

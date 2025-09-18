@@ -56,7 +56,6 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
       where,
       select: {
         id: true,
-        originalInsultId: true,
         guildId: true,
         userId: true,
         blamerId: true,
@@ -86,7 +85,7 @@ async function fetchArchiveData(filter: ArchiveFilter, page: number, pageSize: n
   const userMap = new Map(users.map(u => [u.id, u.username]));
 
   const items = entries.map((e: any) => [
-    `#${e.originalInsultId}`, // Show original insult ID
+    `#${e.id}`, // Show archive ID (same as original insult ID)
     e.insult,
     `@${userMap.get(e.unblamerId) ?? e.unblamerId}`,
   ]);

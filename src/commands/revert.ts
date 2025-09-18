@@ -53,11 +53,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     | { kind: 'failed'; id: number };
 
   const results: Result[] = [];
-  // Batch-fetch archives for the requested original IDs, scoped to current guild
+  // Batch-fetch archives for the requested IDs, scoped to current guild
   const archives = await prisma.archive.findMany({ 
-    where: { originalInsultId: { in: processedIds }, guildId },
+    where: { guildId, id: { in: processedIds } },
     select: {
-      originalInsultId: true,
+      id: true,
       guildId: true,
       userId: true,
       blamerId: true,
@@ -71,11 +71,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   // Permission filtering
   const allowed = archives.filter((a: any) => a.blamerId === invokerId || isAdmin);
-  const allowedByOriginalId = new Map<number, any>(allowed.map((a: any) => [a.originalInsultId, a]));
+  const allowedById = new Map<number, any>(allowed.map((a: any) => [a.id, a]));
 
   // Mark not found and forbidden
   for (const id of processedIds) {
-    const a = archives.find((x: any) => x.originalInsultId === id);
+    const a = archives.find((x: any) => x.id === id);
     if (!a) {
       results.push({ kind: 'not_found', id });
       continue;
@@ -96,12 +96,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Create insults for allowed in parallel, using original IDs
+  // Create insults for allowed in parallel, using the same ID
   let creations: PromiseSettledResult<any>[] = [];
   try {
     creations = await Promise.allSettled(allowed.map((a: any) => prisma.insult.create({
       data: {
-        id: a.originalInsultId, // Use the original ID
+        id: a.id,
         guildId: a.guildId,
         userId: a.userId,
         blamerId: a.blamerId,
@@ -121,24 +121,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Map created results by original id
-  const createdByOriginal = new Map<number, any>();
+  // Map created results by id
+  const createdById = new Map<number, any>();
   const failedCreations: number[] = [];
   creations.forEach((res, idx) => {
-    const origId = allowed[idx].originalInsultId;
+    const id = allowed[idx].id;
     if (res.status === 'fulfilled') {
-      createdByOriginal.set(origId, res.value);
+      createdById.set(id, res.value);
     } else {
-      failedCreations.push(origId);
-      results.push({ kind: 'failed', id: origId });
+      failedCreations.push(id);
+      results.push({ kind: 'failed', id });
     }
   });
 
   // Bulk delete archives for successfully created ones in a single transaction
-  const originalsToDelete = allowed.map((a: any) => a.originalInsultId).filter((oid: number) => createdByOriginal.has(oid));
-  if (originalsToDelete.length > 0) {
+  const idsToDelete = allowed.map((a: any) => a.id).filter((id: number) => createdById.has(id));
+  if (idsToDelete.length > 0) {
     try {
-      await prisma.archive.deleteMany({ where: { originalInsultId: { in: originalsToDelete }, guildId } });
+      await prisma.archive.deleteMany({ where: { guildId, id: { in: idsToDelete } } });
     } catch (err) {
       console.error('Archive cleanup failed:', err);
       const errorEmbed = new EmbedBuilder()
@@ -153,13 +153,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   // Collect results and log in parallel
   const restoredForLogging: { restored: any; archive: any }[] = [];
-  for (const oid of originalsToDelete) {
-    const archive = allowedByOriginalId.get(oid);
-    const restoredInsult = createdByOriginal.get(oid);
+  for (const id of idsToDelete) {
+    const archive = allowedById.get(id);
+    const restoredInsult = createdById.get(id);
     if (!archive || !restoredInsult) continue;
     results.push({
       kind: 'restored',
-      id: oid, // Now using the original ID since we restored with it
+      id: id, // Use the same ID as the archive
       insult: archive.insult,
       userId: archive.userId,
       blamerId: archive.blamerId,
@@ -205,7 +205,10 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Build summary text for all pages
   const summaryLines: string[] = [];
   if (restored.length > 0) {
-    summaryLines.push(`🟢 Restored: ${restored.map(d => d.id).join(', ')}`);
+    const restoredText = restoredForLogging.map(({ restored, archive }) => 
+      `${archive.id}→${restored.id}`
+    ).join(', ');
+    summaryLines.push(`🟢 Restored: ${restoredText}`);
   }
   if (notFound.length > 0) {
     summaryLines.push(`🔴 Not found: ${notFound.map(n => n.id).join(', ')}`);
@@ -224,10 +227,15 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const pages: Page[] = [];
 
   for (const d of restored) {
+    // Find the corresponding archive (same ID)
+    const archive = restoredForLogging.find(({ restored }) => restored.id === d.id)?.archive;
+    const originalId = archive?.id;
+    
     const embed = new EmbedBuilder()
       .setTitle(`Restored Blame ${d.id}`)
       .addFields(
-        //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
+        { name: '**New Blame ID**', value: `${d.id}`, inline: true },
+        { name: '**Original ID**', value: `${originalId}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
         { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
         { name: '**Note**', value: d.note ?? '—', inline: false },
@@ -247,15 +255,20 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const embedGenerator = () => {
     const dynamicPages: Page[] = [];
     for (const d of restored) {
+      // Find the corresponding archive (same ID)
+      const archive = restoredForLogging.find(({ restored }) => restored.id === d.id)?.archive;
+      const originalId = archive?.id;
+      
       const embed = new EmbedBuilder()
         .setTitle(`Restored Blame ${d.id}`)
         .addFields(
-          //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
+          { name: '**New Blame ID**', value: `${d.id}`, inline: true },
+          { name: '**Original ID**', value: `${originalId}`, inline: true },
           { name: '**Insult**', value: d.insult, inline: true },
-          { name: '**Insulter**', value: userMention(d.userId), inline: true },
-          { name: '**Note**', value: d.note ?? '—', inline: false },
-          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
           { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
+          { name: '**Note**', value: d.note ?? '—', inline: false },
+          { name: '**Insulter**', value: userMention(d.userId), inline: true },
+          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
           { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
           { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
         )

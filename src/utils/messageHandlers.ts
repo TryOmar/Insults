@@ -207,9 +207,18 @@ async function recordAutoBlame(message: Message, insult: string, originalContent
     // Include the author's original message as the note (newlines collapsed; no truncation)
     const note = originalContent.replace(/\n+/g, ' ').trim();
 
+    // Compute next guild-scoped ID inside the same transaction
+    const guildId = message.guildId as string;
+    const [maxInsult, maxArchive] = await Promise.all([
+      tx.insult.aggregate({ _max: { id: true }, where: { guildId } }),
+      tx.archive.aggregate({ _max: { id: true }, where: { guildId } }),
+    ]);
+    const nextId = Math.max(maxInsult._max.id ?? 0, maxArchive._max.id ?? 0) + 1;
+
     const created = await tx.insult.create({
       data: {
-        guildId: message.guildId as string,
+        id: nextId,
+        guildId,
         userId: message.author.id,
         blamerId: message.client.user.id,
         insult: insult,

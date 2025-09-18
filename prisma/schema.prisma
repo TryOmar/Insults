@@ -20,7 +20,7 @@ model User {
 }
 
 model Insult {
-  id        Int      @id @default(autoincrement())
+  id        Int      @id
   guildId   String
   userId    String
   blamerId  String
@@ -30,6 +30,7 @@ model Insult {
   blamer    User     @relation("BlamerInsults", fields: [blamerId], references: [id])
   user      User     @relation("UserInsults", fields: [userId], references: [id])
 
+  @@unique([guildId, id])
   @@index([guildId, userId])
   @@index([guildId, blamerId])
   @@index([guildId, insult])
@@ -49,20 +50,20 @@ model Setup {
 }
 
 model Archive {
-  id               Int      @id @default(autoincrement())
-  originalInsultId Int      @unique
-  guildId          String
-  userId           String
-  blamerId         String
-  insult           String   @db.VarChar(100)
-  note             String?  @db.VarChar(1000)
-  createdAt        DateTime
-  unblamerId       String
-  unblamedAt       DateTime @default(now())
-  blamer           User     @relation("BlamerArchives", fields: [blamerId], references: [id])
-  unblamer         User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
-  user             User     @relation("UserArchives", fields: [userId], references: [id])
+  id         Int      @id
+  guildId    String
+  userId     String
+  blamerId   String
+  insult     String   @db.VarChar(100)
+  note       String?  @db.VarChar(1000)
+  createdAt  DateTime
+  unblamerId String
+  unblamedAt DateTime @default(now())
+  blamer     User     @relation("BlamerArchives", fields: [blamerId], references: [id])
+  unblamer   User     @relation("UnblamerArchives", fields: [unblamerId], references: [id])
+  user       User     @relation("UserArchives", fields: [userId], references: [id])
 
+  @@unique([guildId, id])
   @@index([guildId, userId])
   @@index([guildId, blamerId])
   @@index([guildId, unblamerId])
