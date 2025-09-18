@@ -3,6 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChatIn
 type Session = {
   pages: EmbedBuilder[][];
   currentPage: number;
+  embedGenerator?: () => EmbedBuilder[][];
 };
 
 export function createSimplePager(prefix: string) {
@@ -23,7 +24,8 @@ export function createSimplePager(prefix: string) {
     async send(
       interaction: ChatInputCommandInteraction,
       pages: EmbedBuilder[][],
-      initialPage: number = 1
+      initialPage: number = 1,
+      embedGenerator?: () => EmbedBuilder[][]
     ) {
       const page = Math.max(1, Math.min(initialPage, pages.length));
       
@@ -35,7 +37,7 @@ export function createSimplePager(prefix: string) {
       }
       
       const sent = await interaction.fetchReply();
-      sessions.set(sent.id, { pages, currentPage: page });
+      sessions.set(sent.id, { pages, currentPage: page, embedGenerator });
       setTimeout(() => sessions.delete(sent.id), 15 * 60 * 1000);
     },
 
@@ -46,6 +48,11 @@ export function createSimplePager(prefix: string) {
       if (!messageId) return;
       const session = sessions.get(messageId);
       if (!session) return;
+
+      // Regenerate embeds if generator is provided (for dynamic timestamps)
+      if (session.embedGenerator) {
+        session.pages = session.embedGenerator();
+      }
 
       const totalPages = session.pages.length;
       let newPage = session.currentPage;

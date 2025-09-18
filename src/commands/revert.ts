@@ -47,7 +47,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const isAdmin = member.permissions?.has(PermissionFlagsBits.Administrator) === true;
 
   type Result = 
-    | { kind: 'restored'; id: number; originalId: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
+    | { kind: 'restored'; id: number; insult: string; userId: string; blamerId: string; note: string | null; createdAt: Date }
     | { kind: 'not_found'; id: number }
     | { kind: 'forbidden'; id: number }
     | { kind: 'failed'; id: number };
@@ -96,11 +96,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Create insults for allowed in parallel to obtain new IDs
+  // Create insults for allowed in parallel, using original IDs
   let creations: PromiseSettledResult<any>[] = [];
   try {
     creations = await Promise.allSettled(allowed.map((a: any) => prisma.insult.create({
       data: {
+        id: a.originalInsultId, // Use the original ID
         guildId: a.guildId,
         userId: a.userId,
         blamerId: a.blamerId,
@@ -158,8 +159,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     if (!archive || !restoredInsult) continue;
     results.push({
       kind: 'restored',
-      id: restoredInsult.id,
-      originalId: oid,
+      id: oid, // Now using the original ID since we restored with it
       insult: archive.insult,
       userId: archive.userId,
       blamerId: archive.blamerId,
@@ -175,13 +175,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       const revertEmbed = new EmbedBuilder()
         .setTitle(`Restored Blame #${restored.id}`)
         .addFields(
-          { name: '**New Blame ID**', value: `#${restored.id}`, inline: true },
-          { name: '**Original ID**', value: `#${archive.originalInsultId}`, inline: true },
+          //{ name: '**Blame ID**', value: `#${restored.id}`, inline: true },
           { name: '**Insult**', value: archive.insult, inline: true },
+          { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
           { name: '**Note**', value: archive.note ?? '—', inline: false },
           { name: '**Insulter**', value: userMention(archive.userId), inline: true },
           { name: '**Blamer**', value: userMention(archive.blamerId), inline: true },
-          { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(archive.createdAt)), inline: false },
+          { name: '**When blamed**', value: `<t:${Math.floor(new Date(archive.createdAt).getTime() / 1000)}:R>`, inline: false },
         )
         .setColor(0xF39C12)
         .setTimestamp(new Date());
@@ -202,38 +202,71 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   const forbidden = results.filter(r => r.kind === 'forbidden') as Extract<Result, { kind: 'forbidden' }> [];
   const failed = results.filter(r => r.kind === 'failed') as Extract<Result, { kind: 'failed' }> [];
 
-  // Build pages: summary + detail pages for restored
-  const pages: Page[] = [];
-  const successIds = restored.map(d => `Original #${d.originalId} → Restored #${d.id}`).join('\n') || '—';
-  const otherParts: string[] = [];
-  if (notFound.length) otherParts.push(`Not found: ${notFound.map(n => `#${n.id}`).join(', ')}`);
-  if (forbidden.length) otherParts.push(`Not allowed: ${forbidden.map(f => `#${f.id}`).join(', ')}`);
-  if (failed.length) otherParts.push(`Failed: ${failed.map(f => `#${f.id}`).join(', ')}`);
-  if (skippedIds.length) otherParts.push(`Skipped (too many IDs): ${skippedIds.map(id => `#${id}`).join(', ')}`);
+  // Build summary text for all pages
+  const summaryLines: string[] = [];
+  if (restored.length > 0) {
+    summaryLines.push(`🟢 Restored: ${restored.map(d => d.id).join(', ')}`);
+  }
+  if (notFound.length > 0) {
+    summaryLines.push(`🔴 Not found: ${notFound.map(n => n.id).join(', ')}`);
+  }
+  if (forbidden.length > 0) {
+    summaryLines.push(`⚠️ Forbidden: ${forbidden.map(f => f.id).join(', ')}`);
+  }
+  if (failed.length > 0) {
+    summaryLines.push(`❌ Failed: ${failed.map(f => f.id).join(', ')}`);
+  }
+  if (skippedIds.length > 0) {
+    summaryLines.push(`↩️ Skipped: ${skippedIds.join(', ')}`);
+  }
 
-  const summaryText = ['Restored: ' + successIds, ...(otherParts.length ? ['Other: ' + otherParts.join('\n')] : [])].join('\n');
-  const summary = buildSummaryEmbed('Revert Summary', summaryText, 0x1ABC9C);
-  pages.push({ embeds: [summary] });
+  // Build pages: only detail pages for restored items (no separate summary page)
+  const pages: Page[] = [];
 
   for (const d of restored) {
     const embed = new EmbedBuilder()
-      .setTitle(`Restored Blame #${d.id}`)
+      .setTitle(`Restored Blame ${d.id}`)
       .addFields(
-        { name: '**New Blame ID**', value: `#${d.id}`, inline: true },
-        { name: '**Original ID**', value: `#${d.originalId}`, inline: true },
+        //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
+        { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
         { name: '**Note**', value: d.note ?? '—', inline: false },
         { name: '**Insulter**', value: userMention(d.userId), inline: true },
         { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
-        { name: '**When (original)**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
+        { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
+        { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
       )
-      .setColor(0xF39C12)
+      .setColor(0xE67E22)
       .setTimestamp(new Date(d.createdAt));
     pages.push({ embeds: [embed] });
   }
 
-  const initialPage = 1;
-  await pager.send(interaction, pages.map(p => p.embeds), initialPage);
+  const initialPage = 0;
+  
+  // Create embed generator function for dynamic timestamps
+  const embedGenerator = () => {
+    const dynamicPages: Page[] = [];
+    for (const d of restored) {
+      const embed = new EmbedBuilder()
+        .setTitle(`Restored Blame ${d.id}`)
+        .addFields(
+          //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
+          { name: '**Insult**', value: d.insult, inline: true },
+          { name: '**Insulter**', value: userMention(d.userId), inline: true },
+          { name: '**Note**', value: d.note ?? '—', inline: false },
+          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
+          { name: '**Reverter**', value: userMention(interaction.user.id), inline: true },
+          { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
+          { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
+        )
+        .setColor(0xE67E22)
+        .setTimestamp(new Date(d.createdAt));
+      dynamicPages.push({ embeds: [embed] });
+    }
+    return dynamicPages.map(p => p.embeds);
+  };
+  
+  await pager.send(interaction, pages.map(p => p.embeds), initialPage, embedGenerator);
 
   // Update insulter role after successful revert operations
   if (restored.length > 0) {

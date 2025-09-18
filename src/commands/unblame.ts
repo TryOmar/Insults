@@ -131,13 +131,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
           const unblameEmbed = new EmbedBuilder()
             .setTitle(`Deleted Blame #${id}`)
             .addFields(
-              { name: '**Blame ID**', value: `#${id}`, inline: true },
+              //{ name: '**Blame ID**', value: `#${id}`, inline: true },
               { name: '**Insult**', value: found.insult, inline: true },
+              { name: '**Insulter**', value: userMention(found.userId), inline: true },
               { name: '**Note**', value: found.note ?? '—', inline: false },
-              { name: '**Insulter**', value: userMention(found.userId), inline: false },
               { name: '**Blamer**', value: userMention(found.blamerId), inline: true },
               { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-              { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(found.createdAt)), inline: false },
+              { name: '**When blamed**', value: `<t:${Math.floor(new Date(found.createdAt).getTime() / 1000)}:R>`, inline: false },
             )
             .setColor(0xE67E22)
             .setTimestamp(new Date());
@@ -209,32 +209,68 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Build pages: summary + detail pages for deleted items
+  // Build summary text for all pages
+  const summaryLines: string[] = [];
+  if (deleted.length > 0) {
+    summaryLines.push(`🟢 Deleted: ${deleted.map(d => d.id).join(', ')}`);
+  }
+  if (notFound.length > 0) {
+    summaryLines.push(`🔴 Not found: ${notFound.map(n => n.id).join(', ')}`);
+  }
+  if (forbidden.length > 0) {
+    summaryLines.push(`⚠️ Forbidden: ${forbidden.map(f => f.id).join(', ')}`);
+  }
+  if (skippedIds.length > 0) {
+    summaryLines.push(`↩️ Skipped: ${skippedIds.join(', ')}`);
+  }
+
+  // Build pages: only detail pages for deleted items (no separate summary page)
   const pages: Page[] = [];
-  
-  const summaryText = ['Deleted: ' + successIds, ...(otherParts.length ? ['Other: ' + otherParts.join('\n')] : [])].join('\n');
-  const summary = buildSummaryEmbed('Unblame Summary', summaryText, 0x2ECC71);
-  pages.push({ embeds: [summary] });
 
   for (const d of deleted) {
     const embed = new EmbedBuilder()
-      .setTitle(`Deleted Blame #${d.id}`)
+      .setTitle(`Deleted Blame ${d.id}`)
       .addFields(
-        { name: '**Blame ID**', value: `#${d.id}`, inline: true },
+        //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
         { name: '**Insult**', value: d.insult, inline: true },
+        { name: '**Insulter**', value: userMention(d.userId), inline: true },
         { name: '**Note**', value: d.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(d.userId), inline: false },
         { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
         { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-        { name: '**When blamed**', value: '\u200E' + getShortTime(new Date(d.createdAt)), inline: false },
+        { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
+        { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
       )
       .setColor(0xE67E22)
       .setTimestamp(new Date());
     pages.push({ embeds: [embed] });
   }
 
-  const initialPage = 1;
-  await pager.send(interaction, pages.map(p => p.embeds), initialPage);
+  const initialPage = 0;
+  
+  // Create embed generator function for dynamic timestamps
+  const embedGenerator = () => {
+    const dynamicPages: Page[] = [];
+    for (const d of deleted) {
+      const embed = new EmbedBuilder()
+        .setTitle(`Deleted Blame ${d.id}`)
+        .addFields(
+          //{ name: '**Blame ID**', value: `${d.id}`, inline: true },
+          { name: '**Insult**', value: d.insult, inline: true },
+          { name: '**Insulter**', value: userMention(d.userId), inline: true },
+          { name: '**Note**', value: d.note ?? '—', inline: false },
+          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
+          { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
+          { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
+          { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
+        )
+        .setColor(0xE67E22)
+        .setTimestamp(new Date());
+      dynamicPages.push({ embeds: [embed] });
+    }
+    return dynamicPages.map(p => p.embeds);
+  };
+  
+  await pager.send(interaction, pages.map(p => p.embeds), initialPage, embedGenerator);
 
   // Update insulter role after successful unblame operations
   if (deleted.length > 0) {
