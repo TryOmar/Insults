@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, userMention, ButtonInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, userMention, ButtonInteraction, ButtonStyle } from 'discord.js';
 import { prisma } from '../database/client.js';
 import { getShortTime } from '../utils/time.js';
 import { safeInteractionReply, getGuildMember } from '../utils/interactionValidation.js';
@@ -8,7 +8,7 @@ import { logGameplayAction } from '../utils/channelLogging.js';
 import { updateInsulterRoleAfterCommand } from '../utils/insulterRoleUpdate.js';
 import { withGuildAndAuth } from '../utils/commandScaffold.js';
 import { parseNumericIds } from '../utils/ids.js';
-import { createSimplePager } from '../utils/simplePager.js';
+import { PaginationManager, createStandardCustomId, parseStandardCustomId } from '../utils/pagination.js';
 import { buildSummaryEmbed } from '../utils/embeds.js';
 import { setupCache } from '../utils/setupCache.js';
 
@@ -19,8 +19,83 @@ export const data = new SlashCommandBuilder()
     opt.setName('id').setDescription('Blame ID').setRequired(true)
   );
 
-type Page = { embeds: EmbedBuilder[] };
-const pager = createSimplePager('unblame');
+// Stateless pager: one item per page, custom button styles, no refresh
+const pager = new PaginationManager<any>({
+  pageSize: 1,
+  commandName: 'unblame',
+  customIdPrefix: 'unblame',
+  disableRefreshButton: true,
+  buttonStyles: {
+    first: ButtonStyle.Danger,
+    prev: ButtonStyle.Danger,
+    next: ButtonStyle.Danger,
+    last: ButtonStyle.Danger,
+  }
+}, {
+  fetchData: async (page: number, _pageSize: number, guildId: string, actorId: string, idsCsv: string, notFoundCsv: string, forbiddenCsv: string, skippedCsv: string) => {
+    const ids = idsCsv ? idsCsv.split('.').map(x => parseInt(x, 10)).filter(n => !Number.isNaN(n)) : [];
+    const [records] = await Promise.all([
+      prisma.archive.findMany({
+        where: { guildId, id: { in: ids } },
+        select: { id: true, guildId: true, userId: true, blamerId: true, insult: true, note: true, createdAt: true, unblamerId: true }
+      })
+    ]);
+    const totalPages = Math.max(1, ids.length || 1);
+    const index = Math.min(Math.max(1, page), totalPages) - 1;
+    const currentId = ids[index];
+    const current = records.find(r => r.id === currentId) ?? null;
+    return {
+      items: current ? [current] : [],
+      totalCount: ids.length,
+      currentPage: index + 1,
+      totalPages,
+      extra: { guildId, actorId, ids, notFoundCsv, forbiddenCsv, skippedCsv }
+    } as any;
+  },
+  buildEmbed: (data: any) => {
+    const { items, extra } = data;
+    const [d] = items;
+    const parseCsv = (s: string | undefined) => (s && s !== '-' ? s.split('.').filter(Boolean) : []);
+    const notFound = parseCsv(extra.notFoundCsv);
+    const forbidden = parseCsv(extra.forbiddenCsv);
+    const skipped = parseCsv(extra.skippedCsv);
+
+    const summaryLines: string[] = [];
+    if (extra.ids?.length) summaryLines.push(`🟢 Deleted: ${extra.ids.join(', ')}`);
+    if (notFound.length) summaryLines.push(`🔴 Not found: ${notFound.join(', ')}`);
+    if (forbidden.length) summaryLines.push(`⚠️ Forbidden: ${forbidden.join(', ')}`);
+    if (skipped.length) summaryLines.push(`↩️ Skipped: ${skipped.join(', ')}`);
+
+    const embed = new EmbedBuilder()
+      .setTitle(d ? `Deleted Blame ${d.id}` : 'Deleted Blame')
+      .setColor(0xE67E22)
+      .setTimestamp(new Date());
+
+    if (d) {
+      embed.addFields(
+        { name: '**Insult**', value: d.insult, inline: true },
+        { name: '**Unblamer**', value: userMention(d.unblamerId ?? extra.actorId), inline: true },
+        { name: '**Note**', value: d.note ?? '—', inline: false },
+        { name: '**Insulter**', value: userMention(d.userId), inline: true },
+        { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
+        { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
+        { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
+      );
+    } else {
+      embed.setDescription('Record not found. It may have been modified since.');
+    }
+    return embed;
+  },
+  buildCustomId: (page: number, guildId: string, actorId: string, idsCsv: string, notFoundCsv: string, forbiddenCsv: string, skippedCsv: string) => {
+    return createStandardCustomId('unblame', page, guildId, actorId, idsCsv || '-', notFoundCsv || '-', forbiddenCsv || '-', skippedCsv || '-');
+  },
+  parseCustomId: (sessionId: string) => {
+    const parsed = parseStandardCustomId(sessionId, 'unblame');
+    if (!parsed) return null;
+    const [guildId, actorId, idsCsv, notFoundCsv, forbiddenCsv, skippedCsv] = parsed.params;
+    return { page: parsed.page, guildId, actorId, idsCsv, notFoundCsv, forbiddenCsv, skippedCsv } as any;
+  }
+});
 
 async function executeCommand(interaction: ChatInputCommandInteraction) {
   const ctx = await withGuildAndAuth(interaction, { requiresMutating: true, defer: true });
@@ -223,51 +298,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     summaryLines.push(`↩️ Skipped: ${skippedIds.join(', ')}`);
   }
 
-  // Build pages: only detail pages for deleted items (no separate summary page)
-  const pages: Page[] = [];
+  // Stateless pager send: encode session in customId
+  const idsCsv = deleted.map(d => d.id).join('.');
+  const notFoundCsv = notFound.map(n => n.id).join('.');
+  const forbiddenCsv = forbidden.map(f => f.id).join('.');
+  const skippedCsv = skippedIds.join('.');
 
-  for (const d of deleted) {
-    const embed = new EmbedBuilder()
-      .setTitle(`Deleted Blame ${d.id}`)
-      .addFields(
-        { name: '**Insult**', value: d.insult, inline: true },
-        { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-        { name: '**Note**', value: d.note ?? '—', inline: false },
-        { name: '**Insulter**', value: userMention(d.userId), inline: true },
-        { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
-        { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
-        { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
-      )
-      .setColor(0xE67E22)
-      .setTimestamp(new Date());
-    pages.push({ embeds: [embed] });
-  }
-
-  const initialPage = 0;
-  
-  // Create embed generator function for dynamic timestamps
-  const embedGenerator = () => {
-    const dynamicPages: Page[] = [];
-    for (const d of deleted) {
-      const embed = new EmbedBuilder()
-        .setTitle(`Deleted Blame ${d.id}`)
-        .addFields(
-          { name: '**Insult**', value: d.insult, inline: true },
-          { name: '**Unblamer**', value: userMention(interaction.user.id), inline: true },
-          { name: '**Note**', value: d.note ?? '—', inline: false },
-          { name: '**Insulter**', value: userMention(d.userId), inline: true },
-          { name: '**Blamer**', value: userMention(d.blamerId), inline: true },
-          { name: '**When blamed**', value: `<t:${Math.floor(new Date(d.createdAt).getTime() / 1000)}:R>`, inline: false },
-          { name: '**Summary**', value: summaryLines.join('\n') || 'No operations performed', inline: false }
-        )
-        .setColor(0xE67E22)
-        .setTimestamp(new Date());
-      dynamicPages.push({ embeds: [embed] });
-    }
-    return dynamicPages.map(p => p.embeds);
-  };
-  
-  await pager.send(interaction, pages.map(p => p.embeds), initialPage, embedGenerator);
+  await pager.handleInitialCommand(interaction as any, guildId, interaction.user.id, idsCsv, notFoundCsv, forbiddenCsv, skippedCsv);
 
   // Update insulter role after successful unblame operations
   if (deleted.length > 0) {
@@ -276,7 +313,43 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 }
 
 export async function handleButton(customId: string, interaction: ButtonInteraction) {
-  await pager.handleButton(customId, interaction);
+  if (!customId.startsWith('unblame:')) return;
+
+  const parts = customId.split(':');
+  if (parts.length < 3) return;
+
+  const action = parts[1];
+  const sessionId = parts.slice(2).join(':');
+  const parsed = parseStandardCustomId(sessionId, 'unblame');
+  if (!parsed) return;
+
+  const [guildId, actorId, idsCsvRaw, notFoundCsv = '-', forbiddenCsv = '-', skippedCsv = '-'] = parsed.params;
+  const idsCsv = idsCsvRaw === '-' ? '' : idsCsvRaw;
+
+  const ids = idsCsv ? idsCsv.split('.').filter(Boolean) : [];
+
+  let newPage = parsed.page;
+  switch (action) {
+    case 'first':
+      newPage = 1;
+      break;
+    case 'prev':
+      newPage = Math.max(1, parsed.page - 1);
+      break;
+    case 'next':
+      newPage = parsed.page + 1;
+      break;
+    case 'last':
+      newPage = Math.max(1, ids.length);
+      break;
+    case 'refresh':
+      newPage = parsed.page;
+      break;
+    default:
+      return;
+  }
+
+  await pager.respondWithPage(interaction as any, newPage, false, guildId, actorId, idsCsv, notFoundCsv, forbiddenCsv, skippedCsv);
 }
 
 // Export with spam protection

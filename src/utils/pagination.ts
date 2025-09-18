@@ -6,6 +6,13 @@ export interface PaginationConfig {
   commandName: string;
   customIdPrefix: string;
   ephemeral?: boolean; // Whether responses should be ephemeral (default: true)
+  disableRefreshButton?: boolean; // Hide the refresh button if true
+  buttonStyles?: {
+    first?: ButtonStyle;
+    prev?: ButtonStyle;
+    next?: ButtonStyle;
+    last?: ButtonStyle;
+  };
 }
 
 export interface PaginationData<T> {
@@ -41,37 +48,40 @@ export class PaginationManager<T, D = PaginationData<T>> {
     const firstButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:first:${sessionId}`)
       .setLabel('⏮')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(this.config.buttonStyles?.first ?? ButtonStyle.Primary)
       .setDisabled(page === 1 || totalPages <= 1);
 
     // Previous page button (<)
     const prevButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:prev:${sessionId}`)
       .setLabel('◀')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(this.config.buttonStyles?.prev ?? ButtonStyle.Primary)
       .setDisabled(page === 1 || totalPages <= 1);
 
     // Next page button (>)
     const nextButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:next:${sessionId}`)
       .setLabel('▶')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(this.config.buttonStyles?.next ?? ButtonStyle.Primary)
       .setDisabled(page === totalPages || totalPages <= 1);
 
     // Last page button (>>)
     const lastButton = new ButtonBuilder()
       .setCustomId(`${this.config.customIdPrefix}:last:${sessionId}`)
       .setLabel('⏭')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(this.config.buttonStyles?.last ?? ButtonStyle.Primary)
       .setDisabled(page === totalPages || totalPages <= 1);
 
-    // Refresh button (re-fetches current page) - always enabled
-    const refreshButton = new ButtonBuilder()
-      .setCustomId(`${this.config.customIdPrefix}:refresh:${sessionId}`)
-      .setLabel('↻')
-      .setStyle(ButtonStyle.Primary);
+    row.addComponents(firstButton, prevButton, nextButton, lastButton);
 
-    row.addComponents(firstButton, prevButton, nextButton, lastButton, refreshButton);
+    // Optionally add refresh when enabled
+    if (!this.config.disableRefreshButton) {
+      const refreshButton = new ButtonBuilder()
+        .setCustomId(`${this.config.customIdPrefix}:refresh:${sessionId}`)
+        .setLabel('↻')
+        .setStyle(ButtonStyle.Primary);
+      row.addComponents(refreshButton);
+    }
     return [row];
   }
 
