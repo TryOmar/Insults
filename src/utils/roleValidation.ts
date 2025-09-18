@@ -50,11 +50,41 @@ export async function isUserFrozen(member: GuildMember, setup?: any): Promise<Ro
 }
 
 /**
+ * Check if a user can use non-mutating bot commands (only checks frozen status)
+ * This is optimized to avoid unnecessary setup queries for read-only commands
+ */
+export async function canUseNonMutatingCommands(member: GuildMember): Promise<RoleCheckResult> {
+  // Use the setup cache - it's already optimized and cached
+  const setup = await setupCache.getSetup(member.guild.id);
+  
+  // Quick check: if no frozen role is configured, allow access immediately
+  if (!setup?.frozenRoleId) {
+    return { allowed: true };
+  }
+  
+  // Check if user has the frozen role
+  const hasFrozenRole = member.roles.cache.has(setup.frozenRoleId);
+  if (hasFrozenRole) {
+    return { 
+      allowed: false, 
+      reason: `You have the <@&${setup.frozenRoleId}> role and cannot use bot commands.` 
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
  * Check if a user can use any bot command (combines frozen check with mutating check)
  * This function now fetches setup data once and passes it to the other functions
  */
 export async function canUseBotCommands(member: GuildMember, isMutatingCommand: boolean = false): Promise<RoleCheckResult> {
-  // Fetch setup data once using cache
+  // For non-mutating commands, use the optimized function
+  if (!isMutatingCommand) {
+    return await canUseNonMutatingCommands(member);
+  }
+
+  // For mutating commands, fetch setup data once using cache
   const setup = await setupCache.getSetup(member.guild.id);
 
   // First check if user is frozen
@@ -63,13 +93,8 @@ export async function canUseBotCommands(member: GuildMember, isMutatingCommand: 
     return frozenCheck;
   }
 
-  // If it's a mutating command, check blamer role
-  if (isMutatingCommand) {
-    return await canUseMutatingCommands(member, setup);
-  }
-
-  // For non-mutating commands, just check if not frozen
-  return { allowed: true };
+  // Check blamer role for mutating commands
+  return await canUseMutatingCommands(member, setup);
 }
 
 /**

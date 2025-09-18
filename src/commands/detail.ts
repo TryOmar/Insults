@@ -71,7 +71,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (!record) {
-    await interaction.reply({ content: `No record found for ID ${id}.`, flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content: `No record found for ID ${id}.` });
     return;
   }
 
@@ -82,7 +82,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     embed.setTitle(`🗃️ Archived - ${embed.data.title || 'Blame Details'}`);
   }
 
-  await interaction.reply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
   
   const sent = await interaction.fetchReply();
   try {

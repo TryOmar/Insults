@@ -76,9 +76,9 @@ export class PaginationManager<T, D = PaginationData<T>> {
   }
 
   async handleInitialCommand(interaction: ChatInputCommandInteraction, ...args: any[]): Promise<void> {
-    // Check if already acknowledged first
-    if (interaction.replied || interaction.deferred) {
-      console.log(`Interaction ${interaction.id} already acknowledged, skipping initial command`);
+    // Check if already replied (but allow deferred interactions)
+    if (interaction.replied) {
+      console.log(`Interaction ${interaction.id} already replied, skipping initial command`);
       return;
     }
 
@@ -113,9 +113,9 @@ export class PaginationManager<T, D = PaginationData<T>> {
     isInitial: boolean = false,
     ...args: any[]
   ): Promise<void> {
-    // Check if interaction is already acknowledged first
-    if (interaction.replied || interaction.deferred) {
-      console.log(`Interaction ${interaction.id} already acknowledged, skipping response`);
+    // Check if interaction is already replied (but allow deferred interactions)
+    if (interaction.replied) {
+      console.log(`Interaction ${interaction.id} already replied, skipping response`);
       return;
     }
 
@@ -131,17 +131,22 @@ export class PaginationManager<T, D = PaginationData<T>> {
       const components = this.buildPaginationButtons(page, (data as any).totalPages, ...args);
 
       if (isInitial) {
-        const replyOptions: any = { 
-          embeds: [embed], 
-          components
-        };
-        
-        // Only add ephemeral flag if configured to be ephemeral (default: true)
-        if (this.config.ephemeral !== false) {
-          replyOptions.flags = MessageFlags.Ephemeral;
+        // Check if interaction is deferred - if so, use editReply, otherwise use reply
+        if (interaction.deferred) {
+          await interaction.editReply({ embeds: [embed], components });
+        } else {
+          const replyOptions: any = { 
+            embeds: [embed], 
+            components
+          };
+          
+          // Only add ephemeral flag if configured to be ephemeral (default: true)
+          if (this.config.ephemeral !== false) {
+            replyOptions.flags = MessageFlags.Ephemeral;
+          }
+          
+          await interaction.reply(replyOptions);
         }
-        
-        await interaction.reply(replyOptions);
       } else {
         if ('update' in interaction) {
           await interaction.update({ embeds: [embed], components });
@@ -191,16 +196,21 @@ export class PaginationManager<T, D = PaginationData<T>> {
 
       if (isInitial) {
         try {
-          const errorReplyOptions: any = { 
-            embeds: [errorEmbed]
-          };
-          
-          // Only add ephemeral flag if configured to be ephemeral (default: true)
-          if (this.config.ephemeral !== false) {
-            errorReplyOptions.flags = MessageFlags.Ephemeral;
+          // Check if interaction is deferred - if so, use editReply, otherwise use reply
+          if (interaction.deferred) {
+            await interaction.editReply({ embeds: [errorEmbed] });
+          } else {
+            const errorReplyOptions: any = { 
+              embeds: [errorEmbed]
+            };
+            
+            // Only add ephemeral flag if configured to be ephemeral (default: true)
+            if (this.config.ephemeral !== false) {
+              errorReplyOptions.flags = MessageFlags.Ephemeral;
+            }
+            
+            await interaction.reply(errorReplyOptions);
           }
-          
-          await interaction.reply(errorReplyOptions);
         } catch (replyError) {
           // Only log if it's not an invalid interaction error
           if (!(isDiscordAPIError(replyError) && isInteractionInvalidError(replyError))) {
