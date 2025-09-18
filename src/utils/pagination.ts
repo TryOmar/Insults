@@ -12,6 +12,7 @@ export interface PaginationConfig {
     prev?: ButtonStyle;
     next?: ButtonStyle;
     last?: ButtonStyle;
+    refresh?: ButtonStyle;
   };
 }
 
@@ -78,8 +79,8 @@ export class PaginationManager<T, D = PaginationData<T>> {
     if (!this.config.disableRefreshButton) {
       const refreshButton = new ButtonBuilder()
         .setCustomId(`${this.config.customIdPrefix}:refresh:${sessionId}`)
-        .setLabel('↻')
-        .setStyle(ButtonStyle.Primary);
+        .setLabel('⟳')
+        .setStyle(this.config.buttonStyles?.refresh ?? ButtonStyle.Primary);
       row.addComponents(refreshButton);
     }
     return [row];
@@ -158,10 +159,13 @@ export class PaginationManager<T, D = PaginationData<T>> {
           await interaction.reply(replyOptions);
         }
       } else {
-        if ('update' in interaction) {
-          await interaction.update({ embeds: [embed], components });
+        // Prefer editReply if the interaction was deferred (e.g., deferUpdate was called)
+        if ((interaction as any).deferred && 'editReply' in interaction) {
+          await (interaction as any).editReply({ embeds: [embed], components });
+        } else if ('update' in interaction) {
+          await (interaction as any).update({ embeds: [embed], components });
         } else if ('editReply' in interaction) {
-          await interaction.editReply({ embeds: [embed], components });
+          await (interaction as any).editReply({ embeds: [embed], components });
         }
       }
     } catch (error) {

@@ -166,6 +166,8 @@ export async function handleInteraction(interaction: Interaction) {
         await revert.handleButton(id, button);
       } else if (id.startsWith('history:')) {
         await history.handleButton(id, button);
+      } else if (id.startsWith('detail:')) {
+        await detail.handleButton(id, button);
       } else if (id.startsWith('rank:')) {
         await rank.handleButton(id, button);
       } else if (id.startsWith('insults:')) {
