@@ -167,21 +167,23 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
   
   const insults = new Set(groups.map(g => g.insult));
 
-  // Match by exact string equality
-  const hit = candidates.find(c => insults.has(c));
-  if (!hit) return;
+  // Match by exact string equality - find ALL matches
+  const hits = candidates.filter(c => insults.has(c));
+  if (!hits.length) return;
 
-  // Handle different radar modes
-  if (radarMode === 'blame') {
-    // Record an automatic blame: target = author, blamer = bot-self
-    await recordAutoBlame(message, hit, content, 'blame');
-  } else if (radarMode === 'delete') {
-    // Delete the message
-    await deleteMessage(message, hit);
-  } else if (radarMode === 'both') {
-    // Both blame and delete - do blame first, then delete
-    await recordAutoBlame(message, hit, content, 'both');
-    await deleteMessageForBothMode(message, hit, content);
+  // Handle different radar modes for each detected insult
+  for (const hit of hits) {
+    if (radarMode === 'blame') {
+      // Record an automatic blame: target = author, blamer = bot-self
+      await recordAutoBlame(message, hit, content, 'blame');
+    } else if (radarMode === 'delete') {
+      // Delete the message
+      await deleteMessage(message, hit);
+    } else if (radarMode === 'both') {
+      // Both blame and delete - do blame first, then delete
+      await recordAutoBlame(message, hit, content, 'both');
+      await deleteMessageForBothMode(message, hit, content);
+    }
   }
 }
 
