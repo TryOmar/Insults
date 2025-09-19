@@ -16,7 +16,7 @@ const COMMAND_INFO = {
     description: 'Record an insult against a user',
     usage: '`/blame @user insult [note]`',
     userStory: '**User Story:** As a server member, I want to record when someone insults another person so we can track patterns and have accountability.',
-    details: '**Parameters:**\n• `user` (required) - The user being insulted\n• `insult` (required) - The insult phrase (up to 3 words, max 20 chars per word)\n• `note` (optional) - Additional context (≤500 chars)\n\n**Features:**\n• Automatically sends DM to the insulted user\n• Adds 👍👎 reactions for community feedback\n• Validates input and prevents bot targeting'
+    details: '**Parameters:**\n• `user` (required) - The user being insulted\n• `insult` (required) - The insult phrase (up to 3 words, max 20 chars per word)\n• `note` (optional) - Additional context (≤500 chars)\n\n**Alternative Methods:**\n• **Right-click any user** → Apps → "Blame User"\n• **Right-click any message** → Apps → "Blame Message"\n\n**Features:**\n• Automatically sends DM to the insulted user\n• Adds 👍👎 reactions for community feedback\n• Validates input and prevents bot targeting'
   },
   unblame: {
     name: 'unblame',
@@ -99,7 +99,7 @@ function createMainHelpEmbed(): EmbedBuilder {
     .addFields(
       {
         name: '📝 Recording Commands',
-        value: '`/blame @user insult [note]` - Record an insult against a user\n`/unblame <id>` - Delete a blame record by ID',
+        value: '`/blame @user insult [note]` - Record an insult against a user\n`/unblame <id>` - Delete a blame record by ID\n\n**Right-click methods:**\n• Right-click any user → Apps → "Blame User"\n• Right-click any message → Apps → "Blame Message"',
         inline: false
       },
       {
@@ -123,6 +123,12 @@ function createMainHelpEmbed(): EmbedBuilder {
   embed.addFields({
     name: '🔍 Get Detailed Help',
     value: 'Use the dropdown below to select any command for detailed information, user stories, and examples.',
+    inline: false
+  });
+
+  embed.addFields({
+    name: '⚡ Alternative Methods',
+    value: '• Right-click any user → Apps → "Blame User"\n• Right-click any message → Apps → "Blame Message"',
     inline: false
   });
 
