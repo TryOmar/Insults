@@ -1,4 +1,10 @@
 /**
+ * Maximum number of words allowed in an insult
+ * This constant controls the maximum insult length across all validation and scanning functions
+ */
+export const MAX_INSULT_WORDS = 3;
+
+/**
  * Canonicalize insult input:
  * - Trim leading/trailing spaces
  * - Collapse multiple spaces into one
@@ -107,7 +113,7 @@ export function validateSayWordEnglish(text: string): { valid: boolean; error?: 
 /**
  * Validate insult rules:
  * - Must not be empty
- * - Up to 3 words
+ * - Up to MAX_INSULT_WORDS words
  * - Each word ≤ 20 chars
  * - Total length ≤ 100
  * - No "said/say/tell" words in Arabic or English
@@ -129,8 +135,8 @@ export function validateInsultInput(raw: string | null): string | null {
   }
 
   const words = cleaned.split(" ");
-  if (words.length > 3) {
-    throw new Error("Insult too long. Enter only the insult, no descriptions, no stories, no extra text.");
+  if (words.length > MAX_INSULT_WORDS) {
+    throw new Error(`Insult too long. Enter only the insult, no descriptions, no stories, no extra text. Maximum ${MAX_INSULT_WORDS} words allowed.`);
   }
   for (const w of words) {
     if (w.length > 20) {
@@ -154,18 +160,35 @@ export function validateNoteInput(note: string | null): string | null {
   return note;
 }
 
+
 /**
- * Generate n-grams from chat message:
- * Produces 1–3 word sequences, canonicalized.
+ * Scan message for insults using maximum match algorithm:
+ * - Store insults (max MAX_INSULT_WORDS words) in a hash set
+ * - Split message into words
+ * - Scan left to right, and at each position check from longest to shortest word matches
+ * - On match, record it and skip ahead by its length
+ * - Returns only the maximum matches found
  */
-export function generateInsultCandidates(message: string): string[] {
+export function scanMessageForMaxMatches(message: string, insultSet: Set<string>): string[] {
   const words = message.trim().split(/\s+/);
-  const candidates: string[] = [];
-  for (let size = 1; size <= 3; size++) {
-    for (let i = 0; i <= words.length - size; i++) {
-      const phrase = words.slice(i, i + size).join(" ");
-      candidates.push(canonicalizeInsult(phrase));
+  const matches: string[] = [];
+  
+  for (let i = 0; i < words.length; i++) {
+    let matched = false;
+    
+    // Check from longest to shortest word matches (MAX_INSULT_WORDS down to 1)
+    for (let wordCount = MAX_INSULT_WORDS; wordCount >= 1; wordCount--) {
+      if (i + wordCount - 1 < words.length) {
+        const phrase = canonicalizeInsult(words.slice(i, i + wordCount).join(" "));
+        if (insultSet.has(phrase)) {
+          matches.push(phrase);
+          i += wordCount - 1; // Skip ahead by (wordCount - 1) positions (we'll increment by 1 in the loop)
+          matched = true;
+          break; // Found a match, no need to check shorter phrases
+        }
+      }
     }
   }
-  return candidates;
+  
+  return matches;
 }

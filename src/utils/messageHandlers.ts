@@ -3,7 +3,7 @@ import { prisma } from '../database/client.js';
 import { buildBlameEmbedFromRecord } from '../services/blame.js';
 import { guildSetupService } from '../services/guildSetup.js';
 import { checkCooldown } from '../utils/cooldown.js';
-import { generateInsultCandidates } from './insultUtils.js';
+import { scanMessageForMaxMatches } from './insultUtils.js';
 import { logGameplayAction } from './channelLogging.js';
 import { setupCache } from './setupCache.js';
 
@@ -158,17 +158,14 @@ export async function scanMessageForInsults(message: Message): Promise<void> {
   const content = message.content;
   if (!content || content.trim().length === 0) return;
 
-  // Generate canonicalized n-grams
-  const candidates = generateInsultCandidates(content);
-
   // Get insults from DB (single lightweight query)
   const groups = await prisma.insult.groupBy({ by: ['insult'], where: { guildId } });
   if (!groups.length) return;
   
   const insults = new Set(groups.map(g => g.insult));
 
-  // Match by exact string equality - find ALL matches
-  const hits = candidates.filter(c => insults.has(c));
+  // Use new maximum match algorithm - find only maximum matches
+  const hits = scanMessageForMaxMatches(content, insults);
   if (!hits.length) return;
 
   // Handle different radar modes for each detected insult
