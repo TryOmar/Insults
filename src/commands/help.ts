@@ -126,12 +126,6 @@ function createMainHelpEmbed(): EmbedBuilder {
     inline: false
   });
 
-  embed.addFields({
-    name: '⚡ Alternative Methods',
-    value: '• Right-click any user → Apps → "Blame User"\n• Right-click any message → Apps → "Blame Message"',
-    inline: false
-  });
-
   return embed.setTimestamp();
 }
 
