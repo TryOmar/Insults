@@ -44,6 +44,9 @@ export class GuildSetupService {
           create: { guildId, radarMode: 'blame' } as any,
         });
 
+        // Invalidate cache to force reloading fresh settings
+        setupCache.invalidate(guildId);
+
         if (guildName) {
           console.log(`ℹ️ Setup ensured for guild: ${guildName} (${guildId})`);
         }
