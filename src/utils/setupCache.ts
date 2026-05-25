@@ -26,6 +26,7 @@ class SetupCache {
     }
 
     // Fetch from database
+    console.log(`[Database] Querying Setup table for guild ID: ${guildId}`);
     const setup = await prisma.setup.findUnique({
       where: { guildId },
       select: {

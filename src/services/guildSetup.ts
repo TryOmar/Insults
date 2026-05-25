@@ -31,6 +31,12 @@ export class GuildSetupService {
   public async ensureGuildSetup(guildId: string, guildName?: string): Promise<boolean> {
     try {
       return await withRetry(async () => {
+        if (guildName) {
+          console.log(`[Database] Checking/initializing setup configuration for guild "${guildName}" (${guildId})...`);
+        } else {
+          console.log(`[Database] Checking/initializing setup configuration for guild ID: ${guildId}...`);
+        }
+
         // Ensure a setup row exists using upsert to avoid separate read/write
         await prisma.setup.upsert({
           where: { guildId },
